@@ -1,0 +1,868 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Salon Booking REST API",
+    "version": "1.0.0",
+    "description": "Production-ready interactive API documentation for the Hair Dressing Salon Booking Management System."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string" },
+          "role": { "type": "string", "enum": ["CUSTOMER", "ADMIN"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "duration": { "type": "integer", "description": "Duration in minutes" },
+          "price": { "type": "string", "description": "Decimal price string" },
+          "image": { "type": "string", "format": "uri" },
+          "isActive": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "serviceId": { "type": "string", "format": "uuid" },
+          "appointmentDate": { "type": "string", "format": "date-time" },
+          "appointmentTime": { "type": "string", "description": "HH:MM format" },
+          "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"] },
+          "paymentStatus": { "type": "string", "enum": ["UNPAID", "DEPOSIT_PAID", "FULLY_PAID", "REFUNDED"] },
+          "amountPaid": { "type": "string" },
+          "notes": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "service": { "$ref": "#/components/schemas/Service" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "name": { "type": "string" },
+              "email": { "type": "string", "format": "email" }
+            }
+          }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "appointmentId": { "type": "string", "format": "uuid" },
+          "stripePaymentIntentId": { "type": "string" },
+          "amount": { "type": "string" },
+          "status": { "type": "string", "enum": ["PENDING", "SUCCEEDED", "FAILED", "REFUNDED"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "statusCode": { "type": "integer" },
+          "message": { "type": "string" },
+          "data": { "type": "object" }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "statusCode": { "type": "integer" },
+          "message": { "type": "string" },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "summary": "Register a new user",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password"],
+                "properties": {
+                  "name": { "type": "string", "example": "Jane Doe" },
+                  "email": { "type": "string", "format": "email", "example": "jane@example.com" },
+                  "password": { "type": "string", "example": "Password@123" },
+                  "phone": { "type": "string", "example": "1234567890" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 201 },
+                    "message": { "type": "string", "example": "Registration successful" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": { "$ref": "#/components/schemas/User" },
+                        "accessToken": { "type": "string" },
+                        "refreshToken": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input or user already exists", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate user & get tokens",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "jane@example.com" },
+                  "password": { "type": "string", "example": "Password@123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Login successful" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": { "$ref": "#/components/schemas/User" },
+                        "accessToken": { "type": "string" },
+                        "refreshToken": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid email or password", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/auth/refresh-token": {
+      "post": {
+        "summary": "Refresh access token using refresh token",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refreshToken"],
+                "properties": {
+                  "refreshToken": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Token refreshed successfully" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "accessToken": { "type": "string" },
+                        "refreshToken": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid/expired refresh token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Log out user & invalidate refresh token",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["refreshToken"],
+                "properties": {
+                  "refreshToken": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Logged out successfully" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "summary": "Request password reset email",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "jane@example.com" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Always returns 200 for user enumeration security",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "If a user with that email exists, a password reset link has been sent" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "summary": "Reset password using reset token",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "password"],
+                "properties": {
+                  "token": { "type": "string", "description": "The reset token received by email" },
+                  "password": { "type": "string", "description": "New password", "example": "NewPassword@123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Password reset successful" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid/expired token or validation failure", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "summary": "Get all active services",
+        "tags": ["Services"],
+        "responses": {
+          "200": {
+            "description": "List of active services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Service" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new service (Admin only)",
+        "tags": ["Services"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "duration", "price"],
+                "properties": {
+                  "name": { "type": "string", "example": "Beard Grooming" },
+                  "description": { "type": "string", "example": "Beard wash, trimming, and conditioning." },
+                  "duration": { "type": "integer", "example": 25 },
+                  "price": { "type": "number", "example": 35.00 },
+                  "image": { "type": "string", "format": "uri", "example": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 201 },
+                    "data": { "$ref": "#/components/schemas/Service" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden (requires Admin role)" }
+        }
+      }
+    },
+    "/services/{id}": {
+      "put": {
+        "summary": "Update an existing service (Admin only)",
+        "tags": ["Services"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "duration": { "type": "integer" },
+                  "price": { "type": "number" },
+                  "image": { "type": "string", "format": "uri" },
+                  "isActive": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Service updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": { "$ref": "#/components/schemas/Service" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Service not found" }
+        }
+      },
+      "delete": {
+        "summary": "Soft delete a service (Admin only)",
+        "tags": ["Services"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service soft-deleted (deactivated) successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Service deleted successfully" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Service not found" }
+        }
+      }
+    },
+    "/appointments": {
+      "get": {
+        "summary": "Get appointments (Admins see all, Customers see only their own)",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of appointments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Appointment" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Book a new appointment",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["serviceId", "appointmentDate", "appointmentTime"],
+                "properties": {
+                  "serviceId": { "type": "string", "format": "uuid", "example": "ce0326d3-b1bc-4bee-a280-49bf4e64f28c" },
+                  "appointmentDate": { "type": "string", "format": "date", "example": "2026-06-15" },
+                  "appointmentTime": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$", "example": "14:30" },
+                  "notes": { "type": "string", "example": "Please style it slightly shorter." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Appointment booked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 201 },
+                    "message": { "type": "string", "example": "Appointment booked successfully" },
+                    "data": { "$ref": "#/components/schemas/Appointment" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "description": "Time slot double-booked or conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+        }
+      }
+    },
+    "/appointments/{id}": {
+      "get": {
+        "summary": "Get appointment details by ID",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointment details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": { "$ref": "#/components/schemas/Appointment" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Appointment not found" }
+        }
+      },
+      "put": {
+        "summary": "Reschedule an appointment",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["appointmentDate", "appointmentTime"],
+                "properties": {
+                  "appointmentDate": { "type": "string", "format": "date", "example": "2026-06-16" },
+                  "appointmentTime": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$", "example": "15:00" },
+                  "notes": { "type": "string", "example": "Rescheduled due to traffic." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Appointment rescheduled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Appointment rescheduled successfully" },
+                    "data": { "$ref": "#/components/schemas/Appointment" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "description": "New time slot is already booked" }
+        }
+      },
+      "delete": {
+        "summary": "Cancel an appointment",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointment cancelled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Appointment cancelled successfully" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments/{id}/confirm": {
+      "patch": {
+        "summary": "Confirm a pending appointment (Admin only)",
+        "tags": ["Appointments"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointment confirmed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Appointment confirmed successfully" },
+                    "data": { "$ref": "#/components/schemas/Appointment" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/checkout-session": {
+      "post": {
+        "summary": "Create a Stripe Checkout Session for deposit or full payment",
+        "tags": ["Payments"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["appointmentId", "paymentType"],
+                "properties": {
+                  "appointmentId": { "type": "string", "format": "uuid", "example": "b67bf39f-13e6-49d5-be47-16af1c7794d9" },
+                  "paymentType": { "type": "string", "enum": ["DEPOSIT", "FULL"], "example": "DEPOSIT" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stripe Checkout session URL returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sessionId": { "type": "string" },
+                        "sessionUrl": { "type": "string", "format": "uri" },
+                        "amount": { "type": "number", "description": "The exact amount being charged" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/refund": {
+      "post": {
+        "summary": "Refund a payment (Admin only)",
+        "tags": ["Payments"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["paymentId"],
+                "properties": {
+                  "paymentId": { "type": "string", "format": "uuid" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refund processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "message": { "type": "string", "example": "Refund processed successfully" },
+                    "data": { "$ref": "#/components/schemas/Payment" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/webhook": {
+      "post": {
+        "summary": "Stripe webhook receiver (Signature verified)",
+        "tags": ["Payments"],
+        "parameters": [
+          { "name": "stripe-signature", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Webhook handled successfully" },
+          "400": { "description": "Signature verification failed" }
+        }
+      }
+    },
+    "/analytics/dashboard": {
+      "get": {
+        "summary": "Get full dashboard analytics (Admin only)",
+        "tags": ["Analytics"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Analytics dashboard details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "statusCode": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "overview": {
+                          "type": "object",
+                          "properties": {
+                            "totalAppointments": { "type": "integer" },
+                            "totalCustomers": { "type": "integer" },
+                            "totalRevenue": { "type": "number" },
+                            "thisMonthRevenue": { "type": "number" },
+                            "lastMonthRevenue": { "type": "number" },
+                            "revenueGrowth": { "type": "number" }
+                          }
+                        },
+                        "appointmentsByStatus": {
+                          "type": "object",
+                          "additionalProperties": { "type": "integer" }
+                        },
+                        "monthlyRevenue": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "month": { "type": "integer" },
+                              "monthName": { "type": "string" },
+                              "revenue": { "type": "number" },
+                              "count": { "type": "integer" }
+                            }
+                          }
+                        },
+                        "topServices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "string", "format": "uuid" },
+                              "name": { "type": "string" },
+                              "price": { "type": "string" },
+                              "bookingCount": { "type": "integer" }
+                            }
+                          }
+                        },
+                        "recentAppointments": {
+                          "type": "array",
+                          "items": { "$ref": "#/components/schemas/Appointment" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
