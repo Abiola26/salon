@@ -3,6 +3,8 @@
 const cron = require('node-cron');
 const { prisma } = require('../config/db');
 const { sendAppointmentReminderEmail } = require('./email');
+const transporter = require('../config/email');
+const { EMAIL } = require('../config/env');
 const logger = require('../config/logger');
 
 /**
@@ -85,9 +87,64 @@ const scheduleCompletionMarker = () => {
   logger.info('✅ Appointment completion marker initialized (hourly)');
 };
 
+/**
+ * Process pending emails from the database email queue.
+ * Runs every 2 minutes, handles up to 10 emails per tick.
+ */
+const scheduleEmailQueueProcessor = () => {
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      const pending = await prisma.emailQueue.findMany({
+        where: { status: 'PENDING', attempts: { lt: 3 } },
+        take: 10,
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (pending.length === 0) return;
+
+      logger.info(`📧 Email queue processor: ${pending.length} email(s) to send`);
+
+      for (const email of pending) {
+        try {
+          await transporter.sendMail({
+            from: EMAIL.FROM,
+            to: email.to,
+            subject: email.subject,
+            html: email.html,
+          });
+
+          await prisma.emailQueue.update({
+            where: { id: email.id },
+            data: { status: 'SENT', updatedAt: new Date() },
+          });
+
+          logger.info(`✅ Email sent from queue → ${email.to}`);
+        } catch (err) {
+          const newAttempts = email.attempts + 1;
+          await prisma.emailQueue.update({
+            where: { id: email.id },
+            data: {
+              attempts: newAttempts,
+              lastError: err.message,
+              status: newAttempts >= 3 ? 'FAILED' : 'PENDING',
+              updatedAt: new Date(),
+            },
+          });
+          logger.warn(`⚠️  Email failed (attempt ${newAttempts}) → ${email.to}: ${err.message}`);
+        }
+      }
+    } catch (error) {
+      logger.error(`Email queue processor cron failed: ${error.message}`);
+    }
+  });
+
+  logger.info('📬 Email queue processor initialized (every 2 minutes)');
+};
+
 const initSchedulers = () => {
   scheduleAppointmentReminders();
   scheduleCompletionMarker();
+  scheduleEmailQueueProcessor();
 };
 
 module.exports = { initSchedulers };

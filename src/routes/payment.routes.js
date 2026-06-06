@@ -41,6 +41,13 @@ router.post(
 router.get('/', authenticate, adminOnly, paymentController.getAllPayments);
 
 /**
+ * @route   POST /api/payments/:paymentId/refund
+ * @desc    Initiate a Stripe refund for a specific payment (Admin only)
+ * @access  Admin
+ */
+router.post('/:paymentId/refund', authenticate, adminOnly, paymentLimiter, paymentController.refundPayment);
+
+/**
  * @route   GET /api/payments/:appointmentId
  * @desc    Get payments for a specific appointment
  * @access  Private
@@ -48,3 +55,4 @@ router.get('/', authenticate, adminOnly, paymentController.getAllPayments);
 router.get('/:appointmentId', authenticate, paymentController.getPaymentsByAppointment);
 
 module.exports = router;
+

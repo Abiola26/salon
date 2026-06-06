@@ -21,17 +21,26 @@ const serviceController = {
   }),
 
   createService: asyncHandler(async (req, res) => {
-    const service = await serviceService.createService(req.body);
+    const service = await serviceService.createService(
+      req.body,
+      req.user?.id,
+      req.ip
+    );
     return ApiResponse.created(res, 'Service created successfully', service);
   }),
 
   updateService: asyncHandler(async (req, res) => {
-    const service = await serviceService.updateService(req.params.id, req.body);
+    const service = await serviceService.updateService(
+      req.params.id,
+      req.body,
+      req.user?.id,
+      req.ip
+    );
     return ApiResponse.ok(res, 'Service updated successfully', service);
   }),
 
   deleteService: asyncHandler(async (req, res) => {
-    await serviceService.deleteService(req.params.id);
+    await serviceService.deleteService(req.params.id, req.user?.id, req.ip);
     return ApiResponse.ok(res, 'Service deleted successfully');
   }),
 };

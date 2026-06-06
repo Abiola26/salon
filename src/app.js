@@ -14,6 +14,7 @@ const logger = require('./config/logger');
 const routes = require('./routes/index');
 const { globalLimiter } = require('./middlewares/rateLimiter.middleware');
 const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
+const performanceLogger = require('./middlewares/performance.middleware');
 
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./config/swagger.json');
@@ -41,13 +42,25 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowedOrigins = [CLIENT_URL, 'http://localhost:3000'];
-      // Allow requests with no origin (curl, Postman, mobile apps)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: Origin ${origin} not allowed`));
+      const allowedOrigins = [
+        CLIENT_URL,
+        'http://localhost:3000',
+        'http://localhost:5000', // Swagger UI served from same port
+      ];
+
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // In development, allow all localhost origins regardless of port
+      if (NODE_ENV === 'development' && /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+        return callback(null, true);
       }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      callback(new Error(`CORS: Origin ${origin} not allowed`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -93,10 +106,14 @@ if (NODE_ENV === 'development') {
 // ─── Global Rate Limiter ──────────────────────────────────────────────────────
 app.use('/api', globalLimiter);
 
+// ─── Performance Logging ─────────────────────────────────────────────────────
+app.use('/api', performanceLogger);
+
 // ─── API Docs ─────────────────────────────────────────────────────────────────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// ─── API Routes ───────────────────────────────────────────────────────────────
+// ─── API Routes (v1 canonical + /api alias) ───────────────────────────────────
+app.use('/api/v1', routes);
 app.use('/api', routes);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────

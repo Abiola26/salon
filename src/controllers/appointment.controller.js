@@ -43,15 +43,27 @@ const appointmentController = {
     const appointment = await appointmentService.cancelAppointment(
       req.params.id,
       req.user.id,
-      req.user.role
+      req.user.role,
+      req.ip
     );
     return ApiResponse.ok(res, 'Appointment cancelled successfully', appointment);
   }),
 
   // Admin: confirm appointment
   confirmAppointment: asyncHandler(async (req, res) => {
-    const appointment = await appointmentService.confirmAppointment(req.params.id);
+    const appointment = await appointmentService.confirmAppointment(
+      req.params.id,
+      req.user?.id,
+      req.ip
+    );
     return ApiResponse.ok(res, 'Appointment confirmed successfully', appointment);
+  }),
+
+  // Public: get available time slots for a given date (+ optional service)
+  getAvailableSlots: asyncHandler(async (req, res) => {
+    const { date, serviceId } = req.query;
+    const result = await appointmentService.getAvailableSlots(date, serviceId);
+    return ApiResponse.ok(res, 'Available slots retrieved successfully', result);
   }),
 };
 

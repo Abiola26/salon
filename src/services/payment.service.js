@@ -4,7 +4,8 @@ const stripe = require('../config/stripe');
 const appointmentRepository = require('../repositories/appointment.repository');
 const paymentRepository = require('../repositories/payment.repository');
 const userRepository = require('../repositories/user.repository');
-const { sendPaymentConfirmationEmail } = require('../utils/email');
+const { sendPaymentConfirmationEmail, sendRefundEmail } = require('../utils/email');
+const { auditLog } = require('../utils/audit');
 const ApiError = require('../utils/ApiError');
 const { DEPOSIT_PERCENTAGE } = require('../config/env');
 const logger = require('../config/logger');
@@ -174,6 +175,56 @@ const paymentService = {
       throw ApiError.forbidden('Not authorized');
     }
     return paymentRepository.findByAppointmentId(appointmentId);
+  },
+
+  /**
+   * Admin-initiated refund. Calls Stripe, marks payment REFUNDED,
+   * updates appointment paymentStatus, and sends a refund email.
+   */
+  async initiateRefund(paymentId, actorId = null, ipAddress = null) {
+    const payment = await paymentRepository.findById(paymentId);
+    if (!payment) throw ApiError.notFound('Payment not found');
+
+    if (payment.status !== 'SUCCEEDED') {
+      throw ApiError.badRequest(
+        `Cannot refund a payment with status "${payment.status}". Only SUCCEEDED payments can be refunded.`
+      );
+    }
+
+    // Call Stripe
+    const refund = await stripe.refunds.create({
+      payment_intent: payment.stripePaymentIntentId,
+    });
+
+    logger.info(`Stripe refund created: ${refund.id} for intent ${payment.stripePaymentIntentId}`);
+
+    // Update payment record
+    await paymentRepository.update(paymentId, { status: 'REFUNDED' });
+
+    // Recalculate appointment payment status
+    const appointment = await appointmentRepository.findById(payment.appointmentId);
+    const newAmountPaid = Math.max(
+      0,
+      parseFloat(appointment.amountPaid) - parseFloat(payment.amount)
+    );
+    await appointmentRepository.update(payment.appointmentId, {
+      amountPaid: newAmountPaid,
+      paymentStatus: newAmountPaid <= 0 ? 'UNPAID' : 'PARTIAL',
+    });
+
+    // Send refund confirmation email
+    const user = await userRepository.findById(payment.userId);
+    sendRefundEmail(user, payment, appointment.service).catch(() => {});
+
+    // Audit log
+    await auditLog({
+      userId: actorId,
+      action: 'CANCEL_APPOINTMENT', // closest existing enum — extend if needed
+      details: `Admin refund of $${payment.amount} for payment ${paymentId} (intent: ${payment.stripePaymentIntentId})`,
+      ipAddress,
+    });
+
+    return { refundId: refund.id, paymentId, amountRefunded: parseFloat(payment.amount) };
   },
 };
 

@@ -156,6 +156,34 @@ const sendCancellationEmail = async (user, appointment, service) => {
   });
 };
 
+const sendRefundEmail = async (user, payment, service) => {
+  const amount = typeof payment.amount === 'number'
+    ? payment.amount.toFixed(2)
+    : parseFloat(payment.amount).toFixed(2);
+
+  await sendEmail({
+    to: user.email,
+    subject: '💸 Refund Processed',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6d28d9">Refund Processed 💸</h2>
+        <p>Hi ${user.name}, we have successfully processed a refund for your booking.</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:16px">
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Service</td><td style="padding:8px;border:1px solid #e5e7eb">${service.name}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Refund Amount</td><td style="padding:8px;border:1px solid #e5e7eb">$${amount}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Payment Type</td><td style="padding:8px;border:1px solid #e5e7eb">${payment.paymentType}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Reference</td><td style="padding:8px;border:1px solid #e5e7eb">${payment.stripePaymentIntentId}</td></tr>
+        </table>
+        <p style="color:#6b7280;margin-top:16px;font-size:13px">
+          Refunds typically appear in your account within 5–10 business days, depending on your bank.
+        </p>
+        <p>We hope to see you again soon. <a href="${CLIENT_URL}">Book a new appointment</a></p>
+      </div>
+    `,
+    text: `Refund of $${amount} processed for ${service.name}. Reference: ${payment.stripePaymentIntentId}`,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
@@ -164,4 +192,6 @@ module.exports = {
   sendAppointmentReminderEmail,
   sendPaymentConfirmationEmail,
   sendCancellationEmail,
+  sendRefundEmail,
 };
+

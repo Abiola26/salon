@@ -9,6 +9,7 @@ const { validate } = require('../middlewares/validate.middleware');
 const {
   createAppointmentSchema,
   rescheduleAppointmentSchema,
+  availableSlotsSchema,
 } = require('../validators/appointment.validator');
 
 /**
@@ -21,6 +22,17 @@ router.post(
   authenticate,
   validate(createAppointmentSchema),
   appointmentController.createAppointment
+);
+
+/**
+ * @route   GET /api/appointments/available-slots
+ * @desc    Get available booking slots for a given date
+ * @access  Public
+ */
+router.get(
+  '/available-slots',
+  validate(availableSlotsSchema, 'query'),
+  appointmentController.getAvailableSlots
 );
 
 /**

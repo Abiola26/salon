@@ -32,4 +32,15 @@ const rescheduleAppointmentSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-module.exports = { createAppointmentSchema, rescheduleAppointmentSchema };
+const availableSlotsSchema = z.object({
+  date: z
+    .string({ required_error: 'date query param is required (YYYY-MM-DD)' })
+    .refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date format. Use YYYY-MM-DD' })
+    .refine((val) => new Date(val) >= new Date(new Date().setHours(0, 0, 0, 0)), {
+      message: 'Date cannot be in the past',
+    }),
+  serviceId: z.string().uuid('Invalid service ID').optional(),
+});
+
+module.exports = { createAppointmentSchema, rescheduleAppointmentSchema, availableSlotsSchema };
+

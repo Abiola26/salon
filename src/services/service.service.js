@@ -1,6 +1,7 @@
 'use strict';
 
 const serviceRepository = require('../repositories/service.repository');
+const { auditLog } = require('../utils/audit');
 const ApiError = require('../utils/ApiError');
 
 const serviceService = {
@@ -23,13 +24,22 @@ const serviceService = {
     return service;
   },
 
-  async createService(dto) {
+  async createService(dto, actorId = null, ipAddress = null) {
     const existing = await serviceRepository.findByName(dto.name);
     if (existing) throw ApiError.conflict('A service with this name already exists');
-    return serviceRepository.create(dto);
+    const service = await serviceRepository.create(dto);
+
+    await auditLog({
+      userId: actorId,
+      action: 'CREATE_SERVICE',
+      details: `Created service "${service.name}" (id: ${service.id})`,
+      ipAddress,
+    });
+
+    return service;
   },
 
-  async updateService(id, dto) {
+  async updateService(id, dto, actorId = null, ipAddress = null) {
     await serviceService.getServiceById(id);
 
     if (dto.name) {
@@ -39,12 +49,28 @@ const serviceService = {
       }
     }
 
-    return serviceRepository.update(id, dto);
+    const updated = await serviceRepository.update(id, dto);
+
+    await auditLog({
+      userId: actorId,
+      action: 'UPDATE_SERVICE',
+      details: `Updated service "${updated.name}" (id: ${id})`,
+      ipAddress,
+    });
+
+    return updated;
   },
 
-  async deleteService(id) {
-    await serviceService.getServiceById(id);
+  async deleteService(id, actorId = null, ipAddress = null) {
+    const service = await serviceService.getServiceById(id);
     await serviceRepository.delete(id);
+
+    await auditLog({
+      userId: actorId,
+      action: 'DELETE_SERVICE',
+      details: `Deleted service "${service.name}" (id: ${id})`,
+      ipAddress,
+    });
   },
 };
 

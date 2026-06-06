@@ -35,6 +35,16 @@ const paymentController = {
     );
     return ApiResponse.ok(res, 'Payments retrieved successfully', payments);
   }),
+
+  // Admin: initiate a Stripe refund for a specific payment record
+  refundPayment: asyncHandler(async (req, res) => {
+    const result = await paymentService.initiateRefund(
+      req.params.paymentId,
+      req.user.id,
+      req.ip
+    );
+    return ApiResponse.ok(res, 'Refund initiated successfully', result);
+  }),
 };
 
 module.exports = paymentController;

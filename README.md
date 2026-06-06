@@ -91,6 +91,8 @@ npm start
 ```
 
 Server starts at: `http://localhost:5000`
+API Health Check: `http://localhost:5000/api/health`
+Interactive API Docs (Swagger): `http://localhost:5000/api-docs`
 
 ---
 

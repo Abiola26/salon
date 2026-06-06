@@ -95,6 +95,19 @@ const appointmentRepository = {
       by: ['status'],
       _count: { id: true },
     }),
+
+  /**
+   * Return all booked (non-cancelled) appointment times for a specific date.
+   * Used by the available-slots endpoint.
+   */
+  findBookedSlots: (date) =>
+    prisma.appointment.findMany({
+      where: {
+        appointmentDate: new Date(date),
+        status: { not: 'CANCELLED' },
+      },
+      select: { appointmentTime: true, service: { select: { duration: true } } },
+    }),
 };
 
 module.exports = appointmentRepository;

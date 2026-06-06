@@ -5,6 +5,7 @@ const appointmentRepository = require('../repositories/appointment.repository');
 const serviceRepository = require('../repositories/service.repository');
 const userRepository = require('../repositories/user.repository');
 const paymentRepository = require('../repositories/payment.repository');
+const reviewRepository = require('../repositories/review.repository');
 
 const analyticsService = {
   async getDashboard() {
@@ -25,6 +26,7 @@ const analyticsService = {
       thisMonthRevenue,
       lastMonthRevenue,
       recentAppointments,
+      overallRating,
     ] = await Promise.all([
       appointmentRepository.count(),
       userRepository.count({ role: 'CUSTOMER' }),
@@ -48,6 +50,7 @@ const analyticsService = {
           service: { select: { id: true, name: true, price: true } },
         },
       }),
+      reviewRepository.getOverallAverageRating(),
     ]);
 
     // Calculate revenue change %
@@ -62,13 +65,22 @@ const analyticsService = {
       return acc;
     }, {});
 
-    // Format most booked services
-    const topServices = mostBookedServices.map((s) => ({
-      id: s.id,
-      name: s.name,
-      price: s.price,
-      bookingCount: s._count.appointments,
-    }));
+    // Format most booked services — enrich with per-service average rating
+    const topServices = await Promise.all(
+      mostBookedServices.map(async (s) => {
+        const ratingData = await reviewRepository.getAverageRating(s.id);
+        return {
+          id: s.id,
+          name: s.name,
+          price: s.price,
+          bookingCount: s._count.appointments,
+          averageRating: ratingData._avg.rating
+            ? parseFloat(ratingData._avg.rating.toFixed(2))
+            : null,
+          reviewCount: ratingData._count.rating,
+        };
+      })
+    );
 
     // Format monthly revenue (fill in 0 for missing months)
     const monthlyData = Array.from({ length: 12 }, (_, i) => {
@@ -89,6 +101,10 @@ const analyticsService = {
         thisMonthRevenue: thisMonth,
         lastMonthRevenue: lastMonth,
         revenueGrowth: Number(revenueGrowth),
+        overallAverageRating: overallRating._avg.rating
+          ? parseFloat(overallRating._avg.rating.toFixed(2))
+          : null,
+        totalReviews: overallRating._count.rating,
       },
       appointmentsByStatus,
       monthlyRevenue: monthlyData,
@@ -99,3 +115,4 @@ const analyticsService = {
 };
 
 module.exports = analyticsService;
+
