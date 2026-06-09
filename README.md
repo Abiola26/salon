@@ -1,253 +1,134 @@
-# Salon Booking Management System — REST API
+# Aura Salon — Full-Stack Booking Platform
 
-A scalable, production-ready REST API for a Hair Dressing Salon built with **Node.js**, **Express**, **PostgreSQL**, and **Prisma ORM**.
-
-## Features
-
-- 🔐 **JWT Authentication** — access + refresh tokens, forgot/reset password
-- 👤 **Role-based Access** — Admin and Customer roles
-- 💇 **Service Management** — full CRUD for salon services
-- 📅 **Appointment Booking** — create, reschedule, cancel with **double-booking prevention**
-- 💳 **Stripe Payments** — partial deposit or full payment, webhook handling
-- 📧 **Email Notifications** — confirmation, reminder, payment receipt, cancellation
-- ⏰ **Scheduled Jobs** — daily appointment reminders, auto-complete past appointments
-- 📊 **Analytics Dashboard** — revenue, bookings, top services, monthly trends
-- 🛡️ **Security** — Helmet, CORS, rate limiting, HPP, input validation
+A production-ready hair salon booking system with a **Next.js** frontend and a **Node.js/Express** backend, connected to **PostgreSQL** via **Prisma ORM**.
 
 ---
 
-## Tech Stack
+## 📁 Project Structure
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 18+ |
-| Framework | Express.js |
-| Database | PostgreSQL |
-| ORM | Prisma |
-| Auth | JWT + Bcrypt |
-| Payments | Stripe |
-| Validation | Zod |
-| Email | Nodemailer |
-| Logging | Winston + Morgan |
-| Scheduling | node-cron |
+```
+salon/
+├── backend/      # Node.js REST API (Express + Prisma + PostgreSQL)
+└── frontend/     # Next.js 14 App Router client
+```
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js v18+
-- PostgreSQL database
-- Stripe account (for payment features)
+| Tool | Version |
+|------|---------|
+| Node.js | ≥ 18 |
+| PostgreSQL | ≥ 14 |
+| npm | ≥ 9 |
 
-### 1. Clone & Install
+---
+
+### Backend Setup
 
 ```bash
-git clone <repo-url>
-cd salon-booking-api
+cd backend
+cp .env.example .env          # Fill in your DATABASE_URL, JWT secrets, Stripe keys, etc.
 npm install
+npx prisma migrate dev        # Run all migrations
+npm run prisma:seed           # Seed admin user, services, stylists & coupons
+npm run dev                   # Start dev server on http://localhost:5000
 ```
 
-### 2. Configure Environment
+**Key environment variables** (see `backend/.env.example`):
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values:
-
-```env
-DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/salon_db"
-JWT_ACCESS_SECRET=your_secret_here
-JWT_REFRESH_SECRET=your_refresh_secret_here
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-EMAIL_USER=your@email.com
-EMAIL_PASS=your_app_password
-```
-
-### 3. Database Setup
-
-```bash
-# Run migrations
-npm run prisma:migrate
-
-# Generate Prisma client
-npm run prisma:generate
-
-# Seed with demo data
-npm run prisma:seed
-```
-
-### 4. Run
-
-```bash
-# Development (with hot reload)
-npm run dev
-
-# Production
-npm start
-```
-
-Server starts at: `http://localhost:5000`
-API Health Check: `http://localhost:5000/api/health`
-Interactive API Docs (Swagger): `http://localhost:5000/api-docs`
-
----
-
-## API Endpoints
-
-### 🔐 Authentication
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| POST | `/api/auth/register` | Register new user | Public |
-| POST | `/api/auth/login` | Login | Public |
-| POST | `/api/auth/refresh-token` | Refresh access token | Public |
-| POST | `/api/auth/logout` | Logout | 🔒 User |
-| POST | `/api/auth/forgot-password` | Request reset email | Public |
-| POST | `/api/auth/reset-password` | Reset password | Public |
-
-### 👤 Users
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| GET | `/api/users/profile` | Get own profile | 🔒 User |
-| PUT | `/api/users/profile` | Update profile | 🔒 User |
-| PUT | `/api/users/change-password` | Change password | 🔒 User |
-| DELETE | `/api/users/profile` | Delete own account | 🔒 User |
-| GET | `/api/users` | List all users | 👑 Admin |
-| GET | `/api/users/:id` | Get user by ID | 👑 Admin |
-| DELETE | `/api/users/:id` | Delete user | 👑 Admin |
-
-### 💇 Services
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| GET | `/api/services` | Get all services | Public |
-| GET | `/api/services/:id` | Get service by ID | Public |
-| POST | `/api/services` | Create service | 👑 Admin |
-| PUT | `/api/services/:id` | Update service | 👑 Admin |
-| DELETE | `/api/services/:id` | Delete service | 👑 Admin |
-
-### 📅 Appointments
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| POST | `/api/appointments` | Book appointment | 🔒 User |
-| GET | `/api/appointments` | Get appointments | 🔒 User/Admin |
-| GET | `/api/appointments/:id` | Get appointment | 🔒 User/Admin |
-| PUT | `/api/appointments/:id` | Reschedule | 🔒 User/Admin |
-| DELETE | `/api/appointments/:id` | Cancel | 🔒 User/Admin |
-| PATCH | `/api/appointments/:id/confirm` | Confirm | 👑 Admin |
-
-### 💳 Payments
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| POST | `/api/payments/create-intent` | Create Stripe intent | 🔒 User |
-| POST | `/api/payments/webhook` | Stripe webhook | Stripe |
-| GET | `/api/payments` | All payments | 👑 Admin |
-| GET | `/api/payments/:appointmentId` | Appointment payments | 🔒 User/Admin |
-
-### 📊 Analytics
-
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| GET | `/api/analytics/dashboard` | Dashboard stats | 👑 Admin |
-
----
-
-## Project Structure
-
-```
-src/
-├── config/           # DB, env, stripe, email, logger
-├── controllers/      # Route handlers (thin layer)
-├── services/         # Business logic
-├── repositories/     # Prisma data access layer
-├── routes/           # Express routers
-├── middlewares/      # Auth, error, rate-limit, validate
-├── validators/       # Zod schemas
-├── utils/            # Helpers (token, email, scheduler)
-├── app.js            # Express app setup
-└── server.js         # Entry point
-prisma/
-├── schema.prisma     # Database schema
-└── seed.js           # Demo data seeder
-```
-
----
-
-## Database Schema
-
-```
-users ──────┬──< appointments >──── services
-            │         │
-            └──< payments >─────────┘
-```
-
----
-
-## Stripe Webhook Testing
-
-Install Stripe CLI and forward events locally:
-
-```bash
-stripe listen --forward-to localhost:5000/api/payments/webhook
-```
-
-Trigger test events:
-
-```bash
-stripe trigger payment_intent.succeeded
-```
-
----
-
-## Demo Credentials (after seeding)
-
-| Role | Email | Password |
-|---|---|---|
-| Admin | admin@salon.com | Admin@123456 |
-| Customer | jane@example.com | Customer@123 |
-
----
-
-## Security Features
-
-- **Helmet** — sets secure HTTP headers
-- **CORS** — configurable origin whitelist
-- **Rate Limiting** — per-route limits (stricter on auth endpoints)
-- **HPP** — HTTP parameter pollution prevention
-- **Bcrypt** — password hashing (12 rounds)
-- **JWT** — short-lived access tokens (15m) + long-lived refresh tokens (7d)
-- **Zod** — strict input validation on all routes
-- **Email enumeration prevention** — forgot-password always returns 200
-
----
-
-## Environment Variables Reference
-
-| Variable | Description |
-|---|---|
+| Variable | Purpose |
+|----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_ACCESS_SECRET` | Secret for signing access tokens |
-| `JWT_REFRESH_SECRET` | Secret for signing refresh tokens |
-| `JWT_ACCESS_EXPIRES_IN` | Access token expiry (default: 15m) |
-| `JWT_REFRESH_EXPIRES_IN` | Refresh token expiry (default: 7d) |
-| `BCRYPT_SALT_ROUNDS` | Bcrypt rounds (default: 12) |
+| `JWT_ACCESS_SECRET` | JWT signing key (access token) |
+| `JWT_REFRESH_SECRET` | JWT signing key (refresh token) |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
-| `DEPOSIT_PERCENTAGE` | Deposit % of service price (default: 30) |
-| `EMAIL_HOST` | SMTP host |
-| `EMAIL_USER` | SMTP user |
-| `EMAIL_PASS` | SMTP password |
-| `CLIENT_URL` | Frontend URL (for CORS + emails) |
+| `EMAIL_*` | SMTP settings for transactional emails |
+| `TWILIO_*` | Twilio credentials for SMS reminders (optional) |
+| `CLIENT_URL` | Frontend origin for CORS (default: `http://localhost:3000`) |
 
 ---
 
-## License
+### Frontend Setup
 
-MIT
+```bash
+cd frontend
+cp .env.local.example .env.local   # Set NEXT_PUBLIC_API_URL=http://localhost:5000/api
+npm install
+npm run dev                         # Start on http://localhost:3000
+```
+
+---
+
+## 🔑 Default Credentials (after seeding)
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@salon.com` | `Admin@123456` |
+
+---
+
+## ✨ Features
+
+### Customer
+- Browse services with live pricing and duration
+- Book appointments with stylist selection and slot availability
+- Apply coupon codes for discounts
+- Redeem loyalty points at checkout
+- Manage upcoming and past appointments from a personal dashboard
+- Pay deposit or full amount via Stripe
+- Leave reviews after completed appointments
+
+### Admin
+- Full dashboard with revenue analytics and appointment stats
+- Manage services (CRUD) with active/inactive toggle
+- Manage stylists — assign services, bio and photo
+- Manage coupons — percentage or flat discounts with expiry dates and usage limits
+- View and confirm/cancel all appointments
+
+### Platform
+- Email confirmations and cancellation notices
+- Automated SMS reminders 2 hours before each appointment
+- Daily appointment reminder emails (cron at 09:00)
+- Hourly auto-complete for past confirmed appointments
+- Email queue with retry logic (up to 3 attempts)
+- Audit log for all admin actions
+- Rate limiting and security headers (Helmet, HPP, CORS)
+- Swagger API docs at `http://localhost:5000/api-docs`
+
+---
+
+## 🧪 Running Tests
+
+```bash
+cd backend
+npm test              # Run all integration tests
+npm run test:coverage # With coverage report
+```
+
+---
+
+## 🗄️ Database Schema Overview
+
+| Model | Purpose |
+|-------|---------|
+| `User` | Customers and admins, stores loyalty points |
+| `Staff` | Stylists with service assignments |
+| `Service` | Bookable services with price and duration |
+| `Appointment` | Core booking record with coupon and staff FK |
+| `Coupon` | Promo codes (percentage or flat discount) |
+| `Payment` | Stripe payment records per appointment |
+| `Review` | One-per-appointment rating with comment |
+| `AuditLog` | Admin action trail |
+| `EmailQueue` | Reliable email delivery queue |
+
+---
+
+## 📦 Tech Stack
+
+**Backend:** Node.js · Express · Prisma · PostgreSQL · JWT · Stripe · Twilio · Nodemailer · Winston · Zod · node-cron
+
+**Frontend:** Next.js 14 · TypeScript · TailwindCSS · TanStack Query · Zustand · Stripe.js · Lucide Icons

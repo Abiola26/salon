@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #E60654; /* Luxury Crimson */
+  --color-primary-hover: #C20443;
+  --color-champagne: #FFD3E2;
+  --color-dark-gold: #4D021C;
+  --color-gold-muted: #9E3E5C;
+  --color-dark-bg: #0A0A0C;
+  --color-dark-card: #141417;
+  --color-dark-border: rgba(230, 6, 84, 0.15);
+  
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+}
+
+@layer base {
+  :root {
+    --background: #0A0A0C;
+    --foreground: #F4F4F6;
+    --card: #141417;
+    --card-foreground: #F4F4F6;
+    --popover: #141417;
+    --popover-foreground: #F4F4F6;
+    --primary: #E60654;
+    --primary-foreground: #0A0A0C;
+    --secondary: #1F1F24;
+    --secondary-foreground: #F4F4F6;
+    --muted: #1F1F24;
+    --muted-foreground: #A1A1AA;
+    --accent: #E60654;
+    --accent-foreground: #0A0A0C;
+    --destructive: #EF4444;
+    --destructive-foreground: #F4F4F6;
+    --border: rgba(230, 6, 84, 0.15);
+    --input: #1F1F24;
+    --ring: #E60654;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+/* Glassmorphism custom classes */
+.glass-panel {
+  background: rgba(20, 20, 23, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(230, 6, 84, 0.15);
+}
+
+.glass-card {
+  background: rgba(20, 20, 23, 0.45);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(230, 6, 84, 0.08);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(230, 6, 84, 0.25);
+  box-shadow: 0 8px 30px rgba(230, 6, 84, 0.05);
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFD3E2 0%, #E60654 50%, #C20443 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #FFD3E2 0%, #E60654 50%, #C20443 100%);
+}
+
+.bg-gold-gradient-dark {
+  background: linear-gradient(135deg, #2D0211 0%, #170108 100%);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0C;
+}
+::-webkit-scrollbar-thumb {
+  background: #2D0211;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #E60654;
+}
