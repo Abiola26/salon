@@ -1,4 +1,4 @@
-# Aura Salon — Full-Stack Booking Platform
+# Salon — Full-Stack Booking Platform
 
 A production-ready hair salon booking system with a **Next.js** frontend and a **Node.js/Express** backend, connected to **PostgreSQL** via **Prisma ORM**.
 
