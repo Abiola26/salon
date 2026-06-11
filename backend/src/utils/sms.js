@@ -56,10 +56,14 @@ async function sendSms(to, body) {
   } else {
     // Development fallback — log to console
     logger.info(`📱 [SMS MOCK] To: ${to || 'N/A'} | Message: ${body}`);
-    console.log(`\n📱 ── SMS REMINDER (DEV MODE) ──────────────────────────`);
+    // eslint-disable-next-line no-console
+    console.log('\n📱 ── SMS REMINDER (DEV MODE) ──────────────────────────');
+    // eslint-disable-next-line no-console
     console.log(`   To:      ${to || 'No phone number on file'}`);
+    // eslint-disable-next-line no-console
     console.log(`   Message: ${body}`);
-    console.log(`───────────────────────────────────────────────────────\n`);
+    // eslint-disable-next-line no-console
+    console.log('───────────────────────────────────────────────────────\n');
     return { success: true, mock: true };
   }
 }

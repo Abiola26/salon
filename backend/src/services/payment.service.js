@@ -52,7 +52,7 @@ const paymentService = {
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: chargeAmount,
-      currency: 'usd',
+      currency: 'cad',
       metadata: {
         appointmentId,
         userId,
@@ -69,7 +69,7 @@ const paymentService = {
       appointmentId,
       stripePaymentIntentId: paymentIntent.id,
       amount: chargeAmount / 100,
-      currency: 'usd',
+      currency: 'cad',
       status: 'PENDING',
       paymentType,
     });
@@ -78,7 +78,7 @@ const paymentService = {
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       amount: chargeAmount,
-      currency: 'usd',
+      currency: 'cad',
       paymentType,
     };
   },

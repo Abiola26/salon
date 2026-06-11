@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
@@ -20,6 +20,14 @@ export const metadata: Metadata = {
   description: "Book your premium hair care service online with Ottawa Loctician (IWA LOCZ). Experience Ottawa's top-tier dreadlocks and styling services.",
   keywords: "salon, hair booking, loctician, dreadlocks, Ottawa, haircut, styling",
   authors: [{ name: "Ottawa Loctician (IWA LOCZ) Team" }],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

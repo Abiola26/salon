@@ -14,12 +14,14 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-transporter.verify((error) => {
-  if (error) {
-    logger.warn(`Email transporter not ready: ${error.message}`);
-  } else {
-    logger.info('📧 Email transporter ready');
-  }
-});
+if (process.env.NODE_ENV !== 'test') {
+  transporter.verify((error) => {
+    if (error) {
+      logger.warn(`Email transporter not ready: ${error.message}`);
+    } else {
+      logger.info('📧 Email transporter ready');
+    }
+  });
+}
 
 module.exports = transporter;

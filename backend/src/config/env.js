@@ -1,58 +1,88 @@
 'use strict';
 
-require('dotenv').config();
+const { z } = require('zod');
+const dotenv = require('dotenv');
 
-const requiredEnvVars = [
-  'DATABASE_URL',
-  'JWT_ACCESS_SECRET',
-  'JWT_REFRESH_SECRET',
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-];
+dotenv.config();
 
-requiredEnvVars.forEach((key) => {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.string().default('5000'),
+
+  DATABASE_URL: z.string().nonempty(),
+
+  JWT_ACCESS_SECRET: z.string().nonempty(),
+  JWT_REFRESH_SECRET: z.string().nonempty(),
+  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+
+  BCRYPT_SALT_ROUNDS: z.string().default('12'),
+
+  STRIPE_SECRET_KEY: z.string().nonempty(),
+  STRIPE_WEBHOOK_SECRET: z.string().nonempty(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+
+  DEPOSIT_AMOUNT: z.string().default('30'),
+
+  EMAIL_HOST: z.string().default('smtp.gmail.com'),
+  EMAIL_PORT: z.string().default('587'),
+  EMAIL_SECURE: z.string().default('false'),
+  EMAIL_USER: z.string().nonempty(),
+  EMAIL_PASS: z.string().nonempty(),
+  EMAIL_FROM: z.string().default('Salon Bookings <no-reply@salonbookings.com>'),
+
+  CLIENT_URL: z.string().url().default('http://localhost:3000'),
+
+  RATE_LIMIT_WINDOW_MS: z.string().default(String(15 * 60 * 1000)),
+  RATE_LIMIT_MAX: z.string().default('100'),
+  AUTH_RATE_LIMIT_MAX: z.string().default('10'),
 });
 
-module.exports = {
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  PORT: parseInt(process.env.PORT, 10) || 5000,
+const parsedEnv = envSchema.safeParse(process.env);
+if (!parsedEnv.success) {
+  const formatted = parsedEnv.error.format();
+  throw new Error(`Environment validation failed: ${JSON.stringify(formatted, null, 2)}`);
+}
 
-  DATABASE_URL: process.env.DATABASE_URL,
+const env = parsedEnv.data;
+
+module.exports = {
+  NODE_ENV: env.NODE_ENV,
+  PORT: Number(env.PORT),
+
+  DATABASE_URL: env.DATABASE_URL,
 
   JWT: {
-    ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
-    REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
-    ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
-    REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    ACCESS_SECRET: env.JWT_ACCESS_SECRET,
+    REFRESH_SECRET: env.JWT_REFRESH_SECRET,
+    ACCESS_EXPIRES_IN: env.JWT_ACCESS_EXPIRES_IN,
+    REFRESH_EXPIRES_IN: env.JWT_REFRESH_EXPIRES_IN,
   },
 
-  BCRYPT_SALT_ROUNDS: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12,
+  BCRYPT_SALT_ROUNDS: Number(env.BCRYPT_SALT_ROUNDS),
 
   STRIPE: {
-    SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-    WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-    PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
+    SECRET_KEY: env.STRIPE_SECRET_KEY,
+    WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
+    PUBLISHABLE_KEY: env.STRIPE_PUBLISHABLE_KEY || null,
   },
 
-  DEPOSIT_AMOUNT: parseInt(process.env.DEPOSIT_AMOUNT, 10) || 30,
+  DEPOSIT_AMOUNT: Number(env.DEPOSIT_AMOUNT),
 
   EMAIL: {
-    HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    PORT: parseInt(process.env.EMAIL_PORT, 10) || 587,
-    SECURE: process.env.EMAIL_SECURE === 'true',
-    USER: process.env.EMAIL_USER,
-    PASS: process.env.EMAIL_PASS,
-    FROM: process.env.EMAIL_FROM || 'Salon Bookings <no-reply@salonbookings.com>',
+    HOST: env.EMAIL_HOST,
+    PORT: Number(env.EMAIL_PORT),
+    SECURE: env.EMAIL_SECURE === 'true',
+    USER: env.EMAIL_USER,
+    PASS: env.EMAIL_PASS,
+    FROM: env.EMAIL_FROM,
   },
 
-  CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
+  CLIENT_URL: env.CLIENT_URL,
 
   RATE_LIMIT: {
-    WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
-    MAX: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
-    AUTH_MAX: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 10,
+    WINDOW_MS: Number(env.RATE_LIMIT_WINDOW_MS),
+    MAX: Number(env.RATE_LIMIT_MAX),
+    AUTH_MAX: Number(env.AUTH_RATE_LIMIT_MAX),
   },
 };

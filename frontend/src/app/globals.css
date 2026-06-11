@@ -9,7 +9,7 @@
   --color-dark-bg: #0A0A0C;
   --color-dark-card: #141417;
   --color-dark-border: rgba(230, 6, 84, 0.15);
-  
+
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
   --radius-sm: 0.5rem;
@@ -39,11 +39,17 @@
   }
 }
 
+html, body {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 /* Glassmorphism custom classes */
@@ -69,6 +75,7 @@ body {
   background: linear-gradient(135deg, #FFD3E2 0%, #E60654 50%, #C20443 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .bg-gold-gradient {
@@ -84,13 +91,27 @@ body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #0A0A0C;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #2D0211;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #E60654;
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 640px) {
+  body {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  input, textarea, select, button {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
 }

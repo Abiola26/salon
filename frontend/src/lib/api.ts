@@ -1,7 +1,47 @@
-import axios from "axios";
+import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+
+interface ApiErrorPayload {
+  message?: string;
+  errors?: Array<{ message?: string } | string> | Record<string, unknown>;
+}
+
+interface RetryableRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
+export const getApiErrorMessage = (
+  error: unknown,
+  fallback = "Something went wrong. Please try again."
+) => {
+  if (axios.isAxiosError<ApiErrorPayload>(error)) {
+    const data = error.response?.data;
+    if (data?.message) return data.message;
+
+    if (Array.isArray(data?.errors)) {
+      const firstError = data.errors[0];
+      if (typeof firstError === "string") return firstError;
+      if (firstError?.message) return firstError.message;
+    }
+
+    if (data?.errors && typeof data.errors === "object") {
+      const [firstError] = Object.values(data.errors);
+      if (typeof firstError === "string") return firstError;
+      if (Array.isArray(firstError) && typeof firstError[0] === "string") {
+        return firstError[0];
+      }
+    }
+
+    if (!error.response) {
+      return "Unable to reach the server. Please check your connection and try again.";
+    }
+  }
+
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -24,9 +64,12 @@ api.interceptors.request.use(
 
 // Response Interceptor: Handle token rotation
 let isRefreshing = false;
-let failedQueue: any[] = [];
+let failedQueue: Array<{
+  resolve: (token: string | null) => void;
+  reject: (error: unknown) => void;
+}> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -40,17 +83,17 @@ const processQueue = (error: any, token: string | null = null) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config as RetryableRequestConfig | undefined;
 
     // Check if the error is 401 Unauthorized and not already retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       // If we are already refreshing, push this request to the queue
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
+        return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
+            if (token) originalRequest.headers.Authorization = `Bearer ${token}`;
             return api(originalRequest);
           })
           .catch((err) => Promise.reject(err));

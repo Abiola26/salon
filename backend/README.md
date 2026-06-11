@@ -1,37 +1,33 @@
 # Salon Booking Management System — REST API
 
-A scalable, production-ready REST API for a Hair Dressing Salon built with **Node.js**, **Express**, **PostgreSQL**, and **Prisma ORM**.
+A scalable REST API for a hair salon booking platform built with **Node.js**, **Express**, **PostgreSQL**, and **Prisma ORM**.
 
 ## Features
 
-- 🔐 **JWT Authentication** — access + refresh tokens, forgot/reset password
-- 👤 **Role-based Access** — Admin and Customer roles
-- 💇 **Service Management** — full CRUD for salon services
-- 📅 **Appointment Booking** — create, reschedule, cancel with **double-booking prevention**
-- 💳 **Stripe Payments** — partial deposit or full payment, webhook handling
-- 📧 **Email Notifications** — confirmation, reminder, payment receipt, cancellation
-- ⏰ **Scheduled Jobs** — daily appointment reminders, auto-complete past appointments
-- 📊 **Analytics Dashboard** — revenue, bookings, top services, monthly trends
-- 🛡️ **Security** — Helmet, CORS, rate limiting, HPP, input validation
+- 🔐 JWT authentication with access + refresh tokens
+- 👤 Role-based access for Admin and Customer
+- 💇 Service management with active/inactive control
+- 📅 Appointment booking with double-book prevention
+- 💳 Stripe payments and webhook handling
+- 📧 Email notifications and retry queue
+- ⏰ Scheduled jobs for reminders and auto-complete
+- 📊 Analytics dashboard for revenue and bookings
+- 🛡️ Security middleware and input validation
 
 ---
 
-## Tech Stack
+## Architecture
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 18+ |
-| Framework | Express.js |
-| Database | PostgreSQL |
-| ORM | Prisma |
-| Auth | JWT + Bcrypt |
-| Payments | Stripe |
-| Validation | Zod |
-| Email | Nodemailer |
-| Logging | Winston + Morgan |
-| Scheduling | node-cron |
-
----
+- `src/app.js` — Express app, middleware, routes, Swagger setup
+- `src/server.js` — application entry point
+- `src/routes/` — route definitions and versioned endpoints
+- `src/controllers/` — thin request/response handlers
+- `src/services/` — business logic and workflow orchestration
+- `src/repositories/` — Prisma data access layer
+- `src/validators/` — Zod schemas for request validation
+- `src/middlewares/` — auth, error handling, rate limiting
+- `src/utils/` — helpers for tokens, email, audit, scheduler
+- `prisma/` — Prisma schema, migrations, and seed data
 
 ## Getting Started
 
@@ -39,60 +35,123 @@ A scalable, production-ready REST API for a Hair Dressing Salon built with **Nod
 
 - Node.js v18+
 - PostgreSQL database
-- Stripe account (for payment features)
+- Stripe account (for live/test payments)
 
-### 1. Clone & Install
+### Install
 
 ```bash
 git clone <repo-url>
-cd salon-booking-api
+cd backend
 npm install
 ```
 
-### 2. Configure Environment
+### Environment
+
+Copy the environment template and update values:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+This backend validates the environment using Zod and will refuse to start if required values are missing or malformed.
 
-```env
-DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/salon_db"
-JWT_ACCESS_SECRET=your_secret_here
-JWT_REFRESH_SECRET=your_refresh_secret_here
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-EMAIL_USER=your@email.com
-EMAIL_PASS=your_app_password
-```
+Required values:
 
-### 3. Database Setup
+- `DATABASE_URL`
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `JWT_ACCESS_EXPIRES_IN`
+- `JWT_REFRESH_EXPIRES_IN`
+- `BCRYPT_SALT_ROUNDS`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `EMAIL_HOST`
+- `EMAIL_USER`
+- `EMAIL_PASS`
+- `CLIENT_URL`
+
+### Database
 
 ```bash
-# Run migrations
 npm run prisma:migrate
-
-# Generate Prisma client
 npm run prisma:generate
-
-# Seed with demo data
 npm run prisma:seed
 ```
 
-### 4. Run
+### Run locally
 
 ```bash
-# Development (with hot reload)
 npm run dev
-
-# Production
-npm start
 ```
 
-Server starts at: `http://localhost:5000`
-API Health Check: `http://localhost:5000/api/health`
-Interactive API Docs (Swagger): `http://localhost:5000/api-docs`
+API base URL: `http://localhost:5000`
+
+### Docker
+
+Build and run the backend container locally:
+
+```bash
+docker build -t salon-backend ./backend
+docker run --env-file .env -p 5000:5000 salon-backend
+```
+
+Or run the full stack with root compose:
+
+```bash
+docker compose up --build
+```
+
+### Health checks
+
+- `GET /api/health`
+- `GET /api/api-docs`
+
+### Testing
+
+```bash
+npm run test:unit
+npm test
+npm run test:coverage
+```
+
+---
+
+## API Usage Examples
+
+Register a customer:
+
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Jane Doe","email":"jane@example.com","password":"Customer@123"}'
+```
+
+Login:
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"jane@example.com","password":"Customer@123"}'
+```
+
+Fetch services:
+
+```bash
+curl http://localhost:5000/api/services
+```
+
+---
+
+## Deployment
+
+Deploy the backend to any Node.js host.
+
+- set environment variables securely
+- run `npm install`
+- run `npm run prisma:migrate:prod`
+- start with `npm start`
+
+For Docker deployment, use a `Dockerfile` and connect to PostgreSQL with a secure `DATABASE_URL`.
 
 ---
 

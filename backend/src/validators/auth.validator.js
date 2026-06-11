@@ -19,7 +19,8 @@ const registerSchema = z.object({
       'Password must contain at least one uppercase letter, one lowercase letter, and one number'
     ),
   phone: z.string().optional(),
-  role: z.enum(['ADMIN', 'CUSTOMER']).optional().default('CUSTOMER'),
+  // NOTE: role is intentionally excluded — public registration always creates CUSTOMER.
+  // Role elevation must be done by an admin via PUT /api/users/:id.
 });
 
 const loginSchema = z.object({

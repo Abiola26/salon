@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import CheckoutForm from "@/components/CheckoutForm";
@@ -55,6 +55,11 @@ interface Slot {
   available: boolean;
 }
 
+interface ApiCollectionResponse<T> {
+  data?: T;
+  [key: string]: unknown;
+}
+
 export default function CustomerDashboardPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -64,13 +69,12 @@ export default function CustomerDashboardPage() {
 
   // State for cancel modal
   const [cancellingAppt, setCancellingAppt] = useState<Appointment | null>(null);
-  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // State for rescheduling
   const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date());
   const [rescheduleTime, setRescheduleTime] = useState<string | null>(null);
-  const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   // State for paying remaining balance
@@ -78,13 +82,11 @@ export default function CustomerDashboardPage() {
   const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
 
   // State for reviews
   const [reviewingAppt, setReviewingAppt] = useState<Appointment | null>(null);
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>("");
-  const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Local helper to format Date to YYYY-MM-DD
@@ -147,32 +149,55 @@ export default function CustomerDashboardPage() {
 
   const myReviews = myReviewsResponse?.data || [];
   const reviewedApptIds = new Set<string>(
-    myReviews.map((r: any) => r.appointmentId)
+    myReviews.map((r: { appointmentId: string }) => r.appointmentId)
   );
 
-  const handleReviewSubmit = async () => {
-    if (!reviewingAppt) return;
-    setReviewLoading(true);
-    setReviewError(null);
-    try {
+  const updateAppointmentsCache = (
+    updater: (appointment: Appointment) => Appointment
+  ) => {
+    queryClient.setQueryData<ApiCollectionResponse<Appointment[]>>(
+      ["appointments"],
+      (current) => {
+        if (!current?.data) return current;
+        return {
+          ...current,
+          data: current.data.map(updater),
+        };
+      }
+    );
+  };
+
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      if (!reviewingAppt) return;
       await api.post("/reviews", {
         appointmentId: reviewingAppt.id,
         rating: reviewRating,
         comment: reviewComment,
       });
+    },
+    onMutate: () => {
+      setReviewError(null);
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
       queryClient.invalidateQueries({ queryKey: ["my-reviews"] });
       queryClient.invalidateQueries({ queryKey: ["public-reviews"] });
       setReviewingAppt(null);
       setReviewRating(5);
       setReviewComment("");
-    } catch (err: any) {
+    },
+    onError: (error) => {
       setReviewError(
-        err.response?.data?.message || "Failed to submit review. Please try again."
+        getApiErrorMessage(error, "Failed to submit review. Please try again.")
       );
-    } finally {
-      setReviewLoading(false);
-    }
+    },
+  });
+  const reviewLoading = reviewMutation.isPending;
+
+  const handleReviewSubmit = () => {
+    if (!reviewingAppt) return;
+    reviewMutation.mutate();
   };
 
   // Sort and filter appointments
@@ -234,62 +259,152 @@ export default function CustomerDashboardPage() {
     setRescheduleTime(null);
   }, [rescheduleDate]);
 
-  // Cancel Appointment Mutation
-  const handleCancelSubmit = async () => {
-    if (!cancellingAppt) return;
-    setCancelLoading(true);
-    try {
-      await api.delete(`/appointments/${cancellingAppt.id}`);
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      setCancellingAppt(null);
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to cancel appointment.");
-    } finally {
-      setCancelLoading(false);
-    }
-  };
+  const cancelAppointmentMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const res = await api.delete(`/appointments/${appointmentId}`);
+      return res.data?.data as Appointment;
+    },
+    onMutate: async (appointmentId) => {
+      setCancelError(null);
+      await queryClient.cancelQueries({ queryKey: ["appointments"] });
+      const previousAppointments =
+        queryClient.getQueryData<ApiCollectionResponse<Appointment[]>>([
+          "appointments",
+        ]);
 
-  // Reschedule Appointment Mutation
-  const handleRescheduleSubmit = async () => {
-    if (!reschedulingAppt || !rescheduleTime) return;
-    setRescheduleLoading(true);
-    setRescheduleError(null);
-    try {
-      await api.put(`/appointments/${reschedulingAppt.id}`, {
-        appointmentDate: formattedRescheduleDate,
-        appointmentTime: rescheduleTime,
-      });
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      setReschedulingAppt(null);
-    } catch (err: any) {
-      setRescheduleError(
-        err.response?.data?.message || "Failed to reschedule. The slot may have been taken."
+      updateAppointmentsCache((appointment) =>
+        appointment.id === appointmentId
+          ? { ...appointment, status: "CANCELLED" }
+          : appointment
       );
-    } finally {
-      setRescheduleLoading(false);
-    }
+
+      return { previousAppointments };
+    },
+    onError: (error, _appointmentId, context) => {
+      if (context?.previousAppointments) {
+        queryClient.setQueryData(["appointments"], context.previousAppointments);
+      }
+      setCancelError(
+        getApiErrorMessage(error, "Failed to cancel appointment.")
+      );
+    },
+    onSuccess: (cancelledAppointment) => {
+      updateAppointmentsCache((appointment) =>
+        appointment.id === cancelledAppointment.id
+          ? { ...appointment, ...cancelledAppointment }
+          : appointment
+      );
+      setCancellingAppt(null);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+    },
+  });
+  const cancelLoading = cancelAppointmentMutation.isPending;
+
+  const handleCancelSubmit = () => {
+    if (!cancellingAppt) return;
+    cancelAppointmentMutation.mutate(cancellingAppt.id);
   };
 
-  // Settle Outstanding Balance Payment Intent Creation
-  const handlePayBalance = async (appt: Appointment) => {
-    setPayingAppt(appt);
-    setPaymentLoading(true);
-    setPaymentError(null);
-    try {
-      // Settle full remaining amount
+  const rescheduleAppointmentMutation = useMutation({
+    mutationFn: async ({
+      appointmentId,
+      appointmentDate,
+      appointmentTime,
+    }: {
+      appointmentId: string;
+      appointmentDate: string;
+      appointmentTime: string;
+    }) => {
+      const res = await api.put(`/appointments/${appointmentId}`, {
+        appointmentDate,
+        appointmentTime,
+      });
+      return res.data?.data as Appointment;
+    },
+    onMutate: async ({ appointmentId, appointmentDate, appointmentTime }) => {
+      setRescheduleError(null);
+      await queryClient.cancelQueries({ queryKey: ["appointments"] });
+      const previousAppointments =
+        queryClient.getQueryData<ApiCollectionResponse<Appointment[]>>([
+          "appointments",
+        ]);
+
+      updateAppointmentsCache((appointment) =>
+        appointment.id === appointmentId
+          ? {
+              ...appointment,
+              appointmentDate,
+              appointmentTime,
+              status: "PENDING",
+            }
+          : appointment
+      );
+
+      return { previousAppointments };
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previousAppointments) {
+        queryClient.setQueryData(["appointments"], context.previousAppointments);
+      }
+      setRescheduleError(
+        getApiErrorMessage(
+          error,
+          "Failed to reschedule. The slot may have been taken."
+        )
+      );
+    },
+    onSuccess: (rescheduledAppointment) => {
+      updateAppointmentsCache((appointment) =>
+        appointment.id === rescheduledAppointment.id
+          ? { ...appointment, ...rescheduledAppointment }
+          : appointment
+      );
+      setReschedulingAppt(null);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["reschedule-slots"] });
+    },
+  });
+  const rescheduleLoading = rescheduleAppointmentMutation.isPending;
+
+  const handleRescheduleSubmit = () => {
+    if (!reschedulingAppt || !rescheduleTime) return;
+    rescheduleAppointmentMutation.mutate({
+      appointmentId: reschedulingAppt.id,
+      appointmentDate: formattedRescheduleDate,
+      appointmentTime: rescheduleTime,
+    });
+  };
+
+  const paymentIntentMutation = useMutation({
+    mutationFn: async (appt: Appointment) => {
       const intentRes = await api.post("/payments/create-intent", {
         appointmentId: appt.id,
         paymentType: "FULL",
       });
 
-      const { clientSecret, amount } = intentRes.data.data;
+      return intentRes.data.data as { clientSecret: string; amount: number };
+    },
+    onMutate: () => {
+      setPaymentError(null);
+      setPaymentClientSecret(null);
+    },
+    onSuccess: ({ clientSecret, amount }) => {
       setPaymentClientSecret(clientSecret);
       setPaymentAmount(amount);
-    } catch (err: any) {
-      setPaymentError(err.response?.data?.message || "Failed to start payment.");
-    } finally {
-      setPaymentLoading(false);
-    }
+    },
+    onError: (error) => {
+      setPaymentError(getApiErrorMessage(error, "Failed to start payment."));
+    },
+  });
+  const paymentLoading = paymentIntentMutation.isPending;
+
+  const handlePayBalance = (appt: Appointment) => {
+    setPayingAppt(appt);
+    paymentIntentMutation.mutate(appt);
   };
 
   const handlePayBalanceSuccess = () => {
@@ -519,7 +634,10 @@ export default function CustomerDashboardPage() {
                           Reschedule Date
                         </button>
                         <button
-                          onClick={() => setCancellingAppt(appt)}
+                          onClick={() => {
+                            setCancelError(null);
+                            setCancellingAppt(appt);
+                          }}
                           className="w-full bg-transparent hover:bg-red-950/20 text-zinc-400 border border-transparent hover:border-red-900/40 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5 text-red-400" />
@@ -609,6 +727,13 @@ export default function CustomerDashboardPage() {
               <div className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-900/80 text-[11px] text-zinc-500 leading-relaxed">
                 ⚠️ <strong>Cancellation Policy:</strong> Cancellations must be made at least 48 hours in advance of the appointment. Late cancellations or no-shows forfeit the $30 deposit.
               </div>
+
+              {cancelError && (
+                <div className="bg-red-950/40 border border-red-900/40 text-red-300 p-3 rounded-lg flex items-start gap-2 text-xs">
+                  <AlertCircle className="h-4.5 w-4.5 text-red-400 shrink-0 mt-0.5" />
+                  <span>{cancelError}</span>
+                </div>
+              )}
 
               <div className="flex gap-4">
                 <button

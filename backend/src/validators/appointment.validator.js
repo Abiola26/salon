@@ -17,6 +17,10 @@ const createAppointmentSchema = z.object({
     .string({ required_error: 'Appointment time is required' })
     .regex(timeRegex, 'Time must be in HH:MM 24-hour format (e.g. 10:30)'),
   notes: z.string().max(500).optional(),
+  // Optional — Zod strips unknown keys by default so these MUST be declared
+  staffId: z.string().uuid('Invalid staff ID').optional(),
+  couponCode: z.string().max(50).optional(),
+  redeemPoints: z.boolean().optional().default(false),
 });
 
 const rescheduleAppointmentSchema = z.object({
@@ -40,6 +44,8 @@ const availableSlotsSchema = z.object({
       message: 'Date cannot be in the past',
     }),
   serviceId: z.string().uuid('Invalid service ID').optional(),
+  // staffId must be declared or Zod strips it from req.query
+  staffId: z.string().uuid('Invalid staff ID').optional(),
 });
 
 module.exports = { createAppointmentSchema, rescheduleAppointmentSchema, availableSlotsSchema };

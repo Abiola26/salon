@@ -30,13 +30,25 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'script-src': ["'self'", "'unsafe-inline'"],
-        'style-src': ["'self'", "'unsafe-inline'"],
-        'img-src': ["'self'", 'data:', 'https://images.unsplash.com', 'https://*.unsplash.com'],
+        'script-src': ['\'self\'', '\'unsafe-inline\''],
+        'style-src': ['\'self\'', '\'unsafe-inline\''],
+        'img-src': ['\'self\'', 'data:', 'https://images.unsplash.com', 'https://*.unsplash.com'],
       },
     },
   })
 );
+app.use(helmet.referrerPolicy({ policy: 'no-referrer' }));
+app.use(helmet.permittedCrossDomainPolicies());
+
+if (NODE_ENV === 'production') {
+  app.use(
+    helmet.hsts({
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    })
+  );
+}
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use(

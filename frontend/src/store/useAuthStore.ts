@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "salon-auth-storage",
-      storage: createJSONStorage(() => (typeof window !== "undefined" ? window.localStorage : (null as any))),
+      storage: createJSONStorage(() => (typeof window !== "undefined" ? window.localStorage : undefined)),
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.setHydrated();

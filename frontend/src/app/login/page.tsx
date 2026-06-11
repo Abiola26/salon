@@ -7,7 +7,7 @@ import * as z from "zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import { Scissors, Loader2, AlertCircle } from "lucide-react";
 
 const loginSchema = z.object({
@@ -58,10 +58,9 @@ function LoginForm() {
       // Redirect user
       const redirectUrl = searchParams.get("redirect") || (loggedInUser.role === "ADMIN" ? "/admin" : "/dashboard");
       router.push(redirectUrl);
-    } catch (err: any) {
+    } catch (err) {
       setError(
-        err.response?.data?.message ||
-        "Invalid email or password. Please try again."
+        getApiErrorMessage(err, "Invalid email or password. Please try again.")
       );
     } finally {
       setLoading(false);

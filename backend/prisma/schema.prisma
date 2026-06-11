@@ -52,6 +52,12 @@ enum AuditAction {
   CREATE_COUPON
   UPDATE_COUPON
   DELETE_COUPON
+  USER_REGISTERED
+  USER_LOGIN
+  TOKEN_REFRESHED
+  USER_LOGOUT
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
 }
 
 enum EmailStatus {
@@ -181,7 +187,7 @@ model Payment {
   appointmentId         String
   stripePaymentIntentId String              @unique
   amount                Decimal             @db.Decimal(10, 2)
-  currency              String              @default("usd")
+  currency              String              @default("cad")
   status                StripePaymentStatus @default(PENDING)
   paymentType           String              @default("FULL") // FULL or DEPOSIT
   metadata              Json?

@@ -5,10 +5,11 @@ const userRepository = require('../repositories/user.repository');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken, generateRandomToken, hashToken } = require('../utils/token');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../utils/email');
 const ApiError = require('../utils/ApiError');
+const { auditLog } = require('../utils/audit');
 const { BCRYPT_SALT_ROUNDS } = require('../config/env');
 
 const authService = {
-  async register(dto) {
+  async register(dto, ipAddress = null) {
     const existing = await userRepository.findByEmail(dto.email);
     if (existing) throw ApiError.conflict('Email is already registered');
 
@@ -19,11 +20,18 @@ const authService = {
       email: dto.email,
       password: hashedPassword,
       phone: dto.phone || null,
-      role: dto.role || 'CUSTOMER',
+      role: 'CUSTOMER', // Always CUSTOMER — admins are promoted via PUT /api/users/:id
     });
 
     // Fire-and-forget welcome email
     sendWelcomeEmail(user).catch(() => {});
+
+    await auditLog({
+      userId: user.id,
+      action: 'USER_REGISTERED',
+      details: `User registered: ${user.email}`,
+      ipAddress,
+    });
 
     const accessToken = generateAccessToken({ id: user.id, role: user.role });
     const refreshToken = generateRefreshToken({ id: user.id, role: user.role });
@@ -33,7 +41,7 @@ const authService = {
     return { user, accessToken, refreshToken };
   },
 
-  async login(dto) {
+  async login(dto, ipAddress = null) {
     const user = await userRepository.findByEmail(dto.email);
     if (!user) throw ApiError.unauthorized('Invalid email or password');
 
@@ -45,12 +53,20 @@ const authService = {
 
     await userRepository.update(user.id, { refreshToken });
 
-    const { password: _, resetPasswordToken: __, resetPasswordExpiry: ___, refreshToken: ____, ...safeUser } = user;
+    await auditLog({
+      userId: user.id,
+      action: 'USER_LOGIN',
+      details: `User logged in: ${user.email}`,
+      ipAddress,
+    });
+
+    // eslint-disable-next-line no-unused-vars
+    const { password, resetPasswordToken, resetPasswordExpiry, refreshToken: _, ...safeUser } = user;
 
     return { user: safeUser, accessToken, refreshToken };
   },
 
-  async refreshToken(token) {
+  async refreshToken(token, ipAddress = null) {
     let decoded;
     try {
       decoded = verifyRefreshToken(token);
@@ -68,17 +84,40 @@ const authService = {
 
     await userRepository.update(user.id, { refreshToken: newRefreshToken });
 
+    await auditLog({
+      userId: user.id,
+      action: 'TOKEN_REFRESHED',
+      details: `Refresh token rotated for user: ${user.email}`,
+      ipAddress,
+    });
+
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   },
 
-  async logout(userId) {
+  async logout(userId, ipAddress = null) {
+    const user = await userRepository.findByIdFull(userId);
     await userRepository.update(userId, { refreshToken: null });
+
+    await auditLog({
+      userId,
+      action: 'USER_LOGOUT',
+      details: `User logged out: ${user?.email || userId}`,
+      ipAddress,
+    });
   },
 
-  async forgotPassword(email) {
+  async forgotPassword(email, ipAddress = null) {
     const user = await userRepository.findByEmail(email);
     // Always return success to prevent email enumeration
-    if (!user) return;
+    if (!user) {
+      await auditLog({
+        userId: null,
+        action: 'PASSWORD_RESET_REQUESTED',
+        details: `Password reset requested for non-existing email: ${email}`,
+        ipAddress,
+      });
+      return;
+    }
 
     const rawToken = generateRandomToken();
     const hashedToken = hashToken(rawToken);
@@ -90,9 +129,16 @@ const authService = {
     });
 
     await sendPasswordResetEmail(user, rawToken);
+
+    await auditLog({
+      userId: user.id,
+      action: 'PASSWORD_RESET_REQUESTED',
+      details: `Password reset requested for ${user.email}`,
+      ipAddress,
+    });
   },
 
-  async resetPassword(token, newPassword) {
+  async resetPassword(token, newPassword, ipAddress = null) {
     const hashedToken = hashToken(token);
     const user = await userRepository.findByResetToken(hashedToken);
 
@@ -105,6 +151,13 @@ const authService = {
       resetPasswordToken: null,
       resetPasswordExpiry: null,
       refreshToken: null,
+    });
+
+    await auditLog({
+      userId: user.id,
+      action: 'PASSWORD_RESET_COMPLETED',
+      details: `Password reset completed for ${user.email}`,
+      ipAddress,
     });
   },
 };

@@ -7,7 +7,7 @@ import * as z from "zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import { Scissors, Loader2, AlertCircle } from "lucide-react";
 
 const registerSchema = z.object({
@@ -42,6 +42,7 @@ function RegisterForm() {
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterValues>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(registerSchema) as any,
     defaultValues: {
       name: "",
@@ -65,10 +66,12 @@ function RegisterForm() {
       // Redirect user
       const redirectUrl = searchParams.get("redirect") || "/dashboard";
       router.push(redirectUrl);
-    } catch (err: any) {
+    } catch (err) {
       setError(
-        err.response?.data?.message ||
-        "Registration failed. Please make sure email is not already in use."
+        getApiErrorMessage(
+          err,
+          "Registration failed. Please make sure email is not already in use."
+        )
       );
     } finally {
       setLoading(false);

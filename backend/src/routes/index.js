@@ -15,7 +15,6 @@ const couponRoutes = require('./coupon.routes');
 
 // ─── Enhanced Health Check ────────────────────────────────────────────────────
 router.get('/health', async (req, res) => {
-  const start = Date.now();
   let dbStatus = 'ok';
   let dbLatencyMs = null;
 

@@ -19,6 +19,9 @@ import {
   PieChart,
   Pie,
   Legend,
+  LineChart,
+  Line,
+  ComposedChart,
 } from "recharts";
 import {
   TrendingUp,
@@ -34,6 +37,7 @@ import {
   ChevronRight,
   ArrowUpRight,
   ClipboardList,
+  CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -167,6 +171,14 @@ export default function AdminDashboardPage() {
     revenue: s.bookingCount * parseFloat(s.price),
   }));
 
+  // Service Revenue Distribution (sorted by revenue)
+  const serviceRevenueData = [...topServicesChartData].sort((a, b) => b.revenue - a.revenue);
+
+  // Calculate appointment completion rate
+  const completedAppts = stats.appointmentsByStatus['COMPLETED'] || 0;
+  const totalAppts = overview.totalAppointments;
+  const completionRate = totalAppts > 0 ? ((completedAppts / totalAppts) * 100).toFixed(1) : 0;
+
   return (
     <div className="w-full bg-dark-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -201,7 +213,6 @@ export default function AdminDashboardPage() {
 
         {/* 4 Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          
           {/* Revenue Card */}
           <div className="glass-card p-6 rounded-2xl space-y-4 relative overflow-hidden">
             <div className="flex justify-between items-center">
@@ -285,6 +296,26 @@ export default function AdminDashboardPage() {
               </h3>
               <p className="text-xs text-zinc-500">
                 Based on {overview.totalReviews} verified client reviews
+              </p>
+            </div>
+          </div>
+
+          {/* Completion Rate Card */}
+          <div className="glass-card p-6 rounded-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                Completion Rate
+              </span>
+              <div className="h-8 w-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                <CheckCircle className="h-4 w-4 text-blue-400" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-extrabold text-white">
+                {completionRate}%
+              </h3>
+              <p className="text-xs text-zinc-500">
+                {completedAppts} of {totalAppts} appointments completed
               </p>
             </div>
           </div>
@@ -380,6 +411,63 @@ export default function AdminDashboardPage() {
                   <span className="col-span-2 text-center text-zinc-600">No scheduled appointments</span>
                 )}
               </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Additional Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* Monthly Appointments Bar Chart */}
+          <div className="glass-card p-6 rounded-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-zinc-900/60 pb-3">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Monthly Appointment Volume
+              </h3>
+              <span className="text-[10px] text-zinc-500">Booking frequency</span>
+            </div>
+            <div className="h-72 w-full text-xs">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyChartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1c1c20" />
+                  <XAxis dataKey="monthName" stroke="#71717a" />
+                  <YAxis stroke="#71717a" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#141417", borderColor: "#2D0211", borderRadius: "10px", color: "#fff" }}
+                    formatter={(val) => [Number(val), "Bookings"]}
+                  />
+                  <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Service Revenue Distribution Bar Chart */}
+          <div className="glass-card p-6 rounded-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-zinc-900/60 pb-3">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Service Revenue Mix
+              </h3>
+              <span className="text-[10px] text-zinc-500">Top earners</span>
+            </div>
+            <div className="h-72 w-full text-xs">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={serviceRevenueData}
+                  margin={{ top: 5, right: 5, left: 0, bottom: 5 }}
+                  layout="vertical"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1c1c20" />
+                  <XAxis type="number" stroke="#71717a" />
+                  <YAxis dataKey="name" type="category" stroke="#71717a" width={120} interval={0} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#141417", borderColor: "#2D0211", borderRadius: "10px", color: "#fff" }}
+                    formatter={(val) => [`$${Number(val).toFixed(2)}`, "Revenue"]}
+                  />
+                  <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
 

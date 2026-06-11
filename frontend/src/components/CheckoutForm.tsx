@@ -20,7 +20,6 @@ interface CheckoutFormProps {
 export default function CheckoutForm({
   clientSecret,
   amount,
-  currency,
   paymentType,
   onSuccess,
   onCancel,
@@ -66,8 +65,9 @@ export default function CheckoutForm({
         setError("Payment processing failed or is pending.");
         setLoading(false);
       }
-    } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An unexpected error occurred.";
+      setError(message);
       setLoading(false);
     }
   };

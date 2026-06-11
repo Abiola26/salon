@@ -22,6 +22,7 @@ import {
   MessageSquare,
   DollarSign,
 } from "lucide-react";
+import Calendar from "@/components/Calendar";
 
 interface Service {
   id: string;
@@ -164,25 +165,51 @@ export default function AdminAppointmentsPage() {
     }
   };
 
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: any }) => {
+      const res = await api.put(`/appointments/${id}`, body);
+      return res.data;
+    },
+    onMutate: async ({ id, body }) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-appointments"] });
+      const key = ["admin-appointments", filterStatus, filterPayment, filterDate, page];
+      const previous = queryClient.getQueryData(key);
+      queryClient.setQueryData(key, (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((a: any) =>
+            a.id === id ? { ...a, appointmentDate: body.appointmentDate, appointmentTime: body.appointmentTime } : a
+          ),
+        };
+      });
+      return { previous };
+    },
+    onError: (err: any, variables: any, context: any) => {
+      setRescheduleError(err.response?.data?.message || "Failed to reschedule appointment.");
+      if (context?.previous) {
+        const key = ["admin-appointments", filterStatus, filterPayment, filterDate, page];
+        queryClient.setQueryData(key, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+    onSuccess: () => {
+      setReschedulingAppt(null);
+      setRescheduleLoading(false);
+    },
+  });
+
   const handleRescheduleSubmit = async () => {
     if (!reschedulingAppt || !rescheduleTime) return;
     setRescheduleLoading(true);
     setRescheduleError(null);
-    try {
-      await api.put(`/appointments/${reschedulingAppt.id}`, {
-        appointmentDate: formattedRescheduleDate,
-        appointmentTime: rescheduleTime,
-      });
-      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-      setReschedulingAppt(null);
-    } catch (err: any) {
-      setRescheduleError(
-        err.response?.data?.message || "Failed to reschedule appointment."
-      );
-    } finally {
-      setRescheduleLoading(false);
-    }
+    rescheduleMutation.mutate({
+      id: reschedulingAppt.id,
+      body: { appointmentDate: formattedRescheduleDate, appointmentTime: rescheduleTime },
+    });
   };
 
   const clearFilters = () => {
@@ -570,34 +597,18 @@ export default function AdminAppointmentsPage() {
                 </div>
               )}
 
-              {/* Date slider picker */}
+              {/* Date picker - reusable Calendar component */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   Select New Date
                 </label>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                  {rescheduleDays.map((date, idx) => {
-                    const isSelected =
-                      formatLocalDate(date) === formatLocalDate(rescheduleDate);
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setRescheduleDate(date)}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border shrink-0 w-16 transition duration-200 cursor-pointer ${
-                          isSelected
-                            ? "bg-primary text-black border-primary font-bold shadow-md shadow-primary/10"
-                            : "bg-zinc-950/20 text-zinc-400 border-zinc-900 hover:border-zinc-800"
-                        }`}
-                      >
-                        <span className="text-[10px] tracking-wider uppercase font-semibold">
-                          {getDayName(date)}
-                        </span>
-                        <span className="text-base font-extrabold mt-0.5">
-                          {date.getDate()}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div>
+                  {/* Lightweight calendar that shows next 14 days */}
+                  <Calendar
+                    selectedDate={rescheduleDate}
+                    onSelectDate={(d: Date) => setRescheduleDate(d)}
+                    days={14}
+                  />
                 </div>
               </div>
 
@@ -608,20 +619,40 @@ export default function AdminAppointmentsPage() {
                 </label>
 
                 {slotsLoading ? (
-                  <div className="flex flex-col items-center justify-center py-8 space-y-2">
-                    <Loader2 className="animate-spin h-6 w-6 text-primary" />
-                    <span className="text-xs text-zinc-500">Checking timings...</span>
+                  <div className="flex gap-2.5 overflow-x-auto py-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-24 h-10 rounded-xl bg-zinc-950/30 animate-pulse border border-zinc-900/40"
+                        aria-hidden
+                      />
+                    ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+                  <div className="flex gap-2.5 overflow-x-auto py-2 sm:grid sm:grid-cols-5 sm:gap-2.5">
+                    {slots.length === 0 && (
+                      <div className="col-span-full py-6 text-center text-zinc-500 text-xs">
+                        No availability found for this date.
+                      </div>
+                    )}
+
                     {slots.map((slot, idx) => {
                       const isSelected = rescheduleTime === slot.time;
                       return (
                         <button
                           key={idx}
                           disabled={!slot.available}
+                          aria-disabled={!slot.available}
+                          aria-pressed={isSelected}
+                          aria-label={`Select time ${slot.time} ${slot.available ? 'available' : 'unavailable'}`}
                           onClick={() => setRescheduleTime(slot.time)}
-                          className={`py-2 px-1 rounded-xl text-xs font-bold border transition text-center cursor-pointer ${
+                          onKeyDown={(e) => {
+                            if ((e.key === "Enter" || e.key === " ") && slot.available) {
+                              e.preventDefault();
+                              setRescheduleTime(slot.time);
+                            }
+                          }}
+                          className={`min-w-[5.5rem] py-2 px-3 rounded-xl text-sm font-bold border transition text-center cursor-pointer touch-manipulation ${
                             isSelected
                               ? "bg-primary text-black border-primary shadow-md"
                               : slot.available
@@ -633,11 +664,6 @@ export default function AdminAppointmentsPage() {
                         </button>
                       );
                     })}
-                    {slots.length === 0 && (
-                      <div className="col-span-full py-6 text-center text-zinc-500 text-xs">
-                        No availability found for this date.
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

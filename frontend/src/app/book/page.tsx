@@ -2,12 +2,12 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import confetti from "canvas-confetti";
-import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { useAuthStore, type User as AuthUser } from "@/store/useAuthStore";
+import { api, getApiErrorMessage } from "@/lib/api";
 import CheckoutForm from "@/components/CheckoutForm";
 import {
   Scissors,
@@ -62,6 +62,12 @@ interface CouponResult {
   discountAmount: number;
 }
 
+interface AuthSession {
+  user: AuthUser;
+  accessToken: string;
+  refreshToken: string;
+}
+
 function BookingWizardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -86,7 +92,6 @@ function BookingWizardContent() {
   const [couponCode, setCouponCode] = useState("");
   const [couponResult, setCouponResult] = useState<CouponResult | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
-  const [couponLoading, setCouponLoading] = useState(false);
   const [couponApplied, setCouponApplied] = useState(false);
 
   // Loyalty points state
@@ -100,14 +105,12 @@ function BookingWizardContent() {
   const [authName, setAuthName] = useState("");
   const [authPhone, setAuthPhone] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
 
   // Booking process states
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [bookingLoading, setBookingLoading] = useState(false);
 
   const formatLocalDate = (date: Date) => {
     const year = date.getFullYear();
@@ -221,27 +224,35 @@ function BookingWizardContent() {
   };
   const dates = getNextDays();
 
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
-    setCouponError(null);
-    setCouponLoading(true);
-    setCouponApplied(false);
-    setCouponResult(null);
-    try {
+  const applyCouponMutation = useMutation({
+    mutationFn: async (code: string) => {
       const res = await api.post("/coupons/validate", {
-        code: couponCode.trim(),
+        code,
         servicePrice: servicePrice,
       });
-      const result: CouponResult = res.data?.data;
+      return res.data?.data as CouponResult;
+    },
+    onMutate: () => {
+      setCouponError(null);
+      setCouponApplied(false);
+      setCouponResult(null);
+    },
+    onSuccess: (result) => {
       setCouponResult(result);
       setCouponApplied(true);
-    } catch (err: any) {
+    },
+    onError: (error) => {
       setCouponError(
-        err.response?.data?.message || "Invalid or expired coupon code."
+        getApiErrorMessage(error, "Invalid or expired coupon code.")
       );
-    } finally {
-      setCouponLoading(false);
-    }
+    },
+  });
+  const couponLoading = applyCouponMutation.isPending;
+
+  const handleApplyCoupon = () => {
+    const code = couponCode.trim();
+    if (!code) return;
+    applyCouponMutation.mutate(code);
   };
 
   const handleRemoveCoupon = () => {
@@ -251,44 +262,52 @@ function BookingWizardContent() {
     setCouponError(null);
   };
 
-  const handleInlineAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
+  const inlineAuthMutation = useMutation({
+    mutationFn: async (): Promise<AuthSession> => {
       if (authMode === "login") {
         const res = await api.post("/auth/login", {
           email: authEmail,
           password: authPassword,
         });
-        const { user: loggedInUser, accessToken, refreshToken } = res.data.data;
-        setAuth(loggedInUser, accessToken, refreshToken);
-      } else {
-        const res = await api.post("/auth/register", {
-          name: authName,
-          email: authEmail,
-          password: authPassword,
-          phone: authPhone || undefined,
-        });
-        const { user: registeredUser, accessToken, refreshToken } =
-          res.data.data;
-        setAuth(registeredUser, accessToken, refreshToken);
+        return res.data.data;
       }
-    } catch (err: any) {
+
+      const res = await api.post("/auth/register", {
+        name: authName,
+        email: authEmail,
+        password: authPassword,
+        phone: authPhone || undefined,
+      });
+      return res.data.data;
+    },
+    onMutate: () => {
+      setAuthError(null);
+    },
+    onSuccess: ({ user: authedUser, accessToken, refreshToken }) => {
+      setAuth(authedUser, accessToken, refreshToken);
+    },
+    onError: (error) => {
       setAuthError(
-        err.response?.data?.message ||
+        getApiErrorMessage(
+          error,
           "Authentication failed. Please verify credentials."
+        )
       );
-    } finally {
-      setAuthLoading(false);
-    }
+    },
+  });
+  const authLoading = inlineAuthMutation.isPending;
+
+  const handleInlineAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    inlineAuthMutation.mutate();
   };
 
-  const handleCreateAppointment = async () => {
-    if (!selectedService || !selectedTime) return;
-    setBookingError(null);
-    setBookingLoading(true);
-    try {
+  const createBookingMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedService || !selectedTime) {
+        throw new Error("Please select a service and time before booking.");
+      }
+
       const staffId =
         selectedStaff && selectedStaff !== "any" ? selectedStaff.id : undefined;
 
@@ -303,30 +322,41 @@ function BookingWizardContent() {
       });
 
       const appt = appointmentRes.data.data;
-      setAppointmentId(appt.id);
 
-      // Compute amount net of discounts
-      const netAmount = amountToPay;
       const intentRes = await api.post("/payments/create-intent", {
         appointmentId: appt.id,
         paymentType,
       });
 
       const { clientSecret: secret, amount } = intentRes.data.data;
+      return { appointmentId: appt.id, clientSecret: secret, amount };
+    },
+    onMutate: () => {
+      setBookingError(null);
+    },
+    onSuccess: ({ appointmentId: createdAppointmentId, clientSecret: secret, amount }) => {
+      setAppointmentId(createdAppointmentId);
       setClientSecret(secret);
       setPaymentAmount(amount);
       setStep(5);
-    } catch (err: any) {
+    },
+    onError: (error) => {
       setBookingError(
-        err.response?.data?.message ||
+        getApiErrorMessage(
+          error,
           "Failed to establish booking. Please try another time."
+        )
       );
-    } finally {
-      setBookingLoading(false);
-    }
+    },
+  });
+  const bookingLoading = createBookingMutation.isPending;
+
+  const handleCreateAppointment = () => {
+    if (!selectedService || !selectedTime) return;
+    createBookingMutation.mutate();
   };
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = (_paymentIntentId: string) => {
     confetti({
       particleCount: 150,
       spread: 80,

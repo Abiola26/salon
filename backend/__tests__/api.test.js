@@ -16,6 +16,10 @@ let adminToken = '';
 let customerToken = '';
 let createdServiceId = '';
 let createdAppointmentId = '';
+let createdStaffId = '';
+let createdCouponId = '';
+let createdCouponCode = '';
+let createdReviewId = '';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const tomorrow = new Date();
@@ -283,12 +287,196 @@ describe('Analytics API', () => {
 });
 
 // =============================================================================
-// CLEANUP — delete test appointment and service directly via Prisma
+// STAFF API
+// =============================================================================
+describe('Staff API', () => {
+  it('POST /api/staff — admin should create staff', async () => {
+    const res = await request(app)
+      .post('/api/staff')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Test Stylist',
+        bio: 'Automated test stylist bio',
+        isActive: true,
+      });
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toHaveProperty('id');
+    createdStaffId = res.body.data.id;
+  });
+
+  it('GET /api/staff — public should list staff', async () => {
+    const res = await request(app).get('/api/staff');
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('GET /api/staff/:id — public should get staff', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app).get(`/api/staff/${createdStaffId}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.name).toBe('Test Stylist');
+  });
+
+  it('PUT /api/staff/:id — admin should update staff', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .put(`/api/staff/${createdStaffId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Updated Test Stylist',
+        isActive: true,
+      });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.name).toBe('Updated Test Stylist');
+  });
+});
+
+// =============================================================================
+// COUPONS API
+// =============================================================================
+describe('Coupons API', () => {
+  it('POST /api/coupons — admin should create coupon', async () => {
+    createdCouponCode = `TEST_${Date.now()}`;
+    const res = await request(app)
+      .post('/api/coupons')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: createdCouponCode,
+        discountType: 'PERCENTAGE',
+        discountValue: '15.00',
+        isActive: true,
+        startDate: new Date().toISOString(),
+        endDate: tomorrow.toISOString(),
+      });
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toHaveProperty('id');
+    createdCouponId = res.body.data.id;
+  });
+
+  it('GET /api/coupons — admin should get all coupons', async () => {
+    const res = await request(app)
+      .get('/api/coupons')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('GET /api/coupons/:id — admin should get coupon by ID', async () => {
+    if (!createdCouponId) return;
+    const res = await request(app)
+      .get(`/api/coupons/${createdCouponId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.id).toBe(createdCouponId);
+  });
+
+  it('POST /api/coupons/validate — customer should validate coupon', async () => {
+    if (!createdCouponCode) return;
+    const res = await request(app)
+      .post('/api/coupons/validate')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        code: createdCouponCode,
+        servicePrice: 100.00,
+      });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toHaveProperty('discountAmount');
+    expect(Number(res.body.data.discountAmount)).toBe(15.00);
+  });
+
+  it('PUT /api/coupons/:id — admin should update coupon', async () => {
+    if (!createdCouponId) return;
+    const res = await request(app)
+      .put(`/api/coupons/${createdCouponId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: createdCouponCode,
+        discountType: 'PERCENTAGE',
+        discountValue: '20.00',
+        isActive: true,
+      });
+    expect(res.statusCode).toBe(200);
+    expect(Number(res.body.data.discountValue)).toBe(20.00);
+  });
+});
+
+// =============================================================================
+// REVIEWS API
+// =============================================================================
+describe('Reviews API', () => {
+  it('POST /api/reviews — customer should submit review for completed appointment', async () => {
+    if (!createdAppointmentId || !createdServiceId || !customerToken) return;
+
+    // Manually mark the appointment COMPLETED directly via Prisma
+    await prisma.appointment.update({
+      where: { id: createdAppointmentId },
+      data: { status: 'COMPLETED' },
+    });
+
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        appointmentId: createdAppointmentId,
+        rating: 5,
+        comment: 'Excellent service!',
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toHaveProperty('id');
+    createdReviewId = res.body.data.id;
+  });
+
+  it('GET /api/reviews — public should get reviews', async () => {
+    const res = await request(app).get('/api/reviews');
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('GET /api/reviews/my — customer should get their own reviews', async () => {
+    if (!customerToken) return;
+    const res = await request(app)
+      .get('/api/reviews/my')
+      .set('Authorization', `Bearer ${customerToken}`);
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+});
+
+// =============================================================================
+// PAYMENTS API
+// =============================================================================
+describe('Payments API', () => {
+  it('GET /api/payments — admin should list all payments', async () => {
+    const res = await request(app)
+      .get('/api/payments')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('GET /api/payments/:appointmentId — customer should list payments for appointment', async () => {
+    if (!createdAppointmentId || !customerToken) return;
+    const res = await request(app)
+      .get(`/api/payments/${createdAppointmentId}`)
+      .set('Authorization', `Bearer ${customerToken}`);
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+});
+
+// =============================================================================
+// CLEANUP — delete test entities directly via Prisma
 // =============================================================================
 afterAll(async () => {
   try {
+    if (createdReviewId) {
+      await prisma.review.delete({
+        where: { id: createdReviewId },
+      }).catch(() => {});
+    }
+
     if (createdAppointmentId) {
-      // Direct DB delete bypasses RESTRICT and cascades/clears payments and reviews
       await prisma.appointment.delete({
         where: { id: createdAppointmentId },
       }).catch(() => {});
@@ -297,6 +485,18 @@ afterAll(async () => {
     if (createdServiceId) {
       await prisma.service.delete({
         where: { id: createdServiceId },
+      }).catch(() => {});
+    }
+
+    if (createdStaffId) {
+      await prisma.staff.delete({
+        where: { id: createdStaffId },
+      }).catch(() => {});
+    }
+
+    if (createdCouponId) {
+      await prisma.coupon.delete({
+        where: { id: createdCouponId },
       }).catch(() => {});
     }
   } catch (error) {

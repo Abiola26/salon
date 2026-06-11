@@ -67,7 +67,7 @@ async function runSmsReminderJob() {
         `Hi ${appt.user.name}! 💇 This is a reminder that your ` +
         `${appt.service.name} appointment${stylistLine} is in approximately ` +
         `2 hours (at ${appt.appointmentTime}). ` +
-        `We look forward to seeing you! – The Salon Team`;
+        'We look forward to seeing you! – The Salon Team';
 
       await sendSms(appt.user.phone, message);
     }

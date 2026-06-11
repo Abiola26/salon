@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X, Scissors, User as UserIcon, LogOut, LayoutDashboard, Calendar, Settings, ChevronDown } from "lucide-react";
+import { Menu, X, Scissors, User as UserIcon, LogOut, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -15,7 +15,7 @@ export default function Navbar() {
   const { user, logout, isHydrated } = useAuthStore();
   const [mounted, setMounted] = useState(false);
 
-  // Close dropdown on navigation
+  // Reset dropdown when route changes
   useEffect(() => {
     setIsAdminDropdownOpen(false);
   }, [pathname]);
@@ -172,6 +172,8 @@ export default function Navbar() {
           <div className="flex md:hidden">
             <button
               onClick={() => setIsOpen(!isOpen)}
+              aria-expanded={isOpen}
+              aria-label={isOpen ? "Close navigation menu" : "Open navigation menu"}
               className="text-zinc-300 hover:text-primary p-2 cursor-pointer"
             >
               {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}

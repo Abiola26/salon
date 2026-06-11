@@ -224,7 +224,7 @@
           },
           "currency": {
             "type": "string",
-            "example": "usd"
+            "example": "cad"
           },
           "status": {
             "type": "string",
@@ -1896,7 +1896,7 @@
                         },
                         "currency": {
                           "type": "string",
-                          "example": "usd"
+                          "example": "cad"
                         },
                         "paymentType": {
                           "type": "string"

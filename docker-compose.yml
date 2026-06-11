@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: salon
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '5000:5000'
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/salon
+      JWT_ACCESS_SECRET: changeme_access_secret
+      JWT_REFRESH_SECRET: changeme_refresh_secret
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      BCRYPT_SALT_ROUNDS: '12'
+      STRIPE_SECRET_KEY: sk_test_your_key_here
+      STRIPE_WEBHOOK_SECRET: whsec_your_key_here
+      EMAIL_HOST: smtp.example.com
+      EMAIL_PORT: '587'
+      EMAIL_SECURE: 'false'
+      EMAIL_USER: user@example.com
+      EMAIL_PASS: examplepass
+      CLIENT_URL: http://localhost:3000
+    depends_on:
+      - postgres
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:

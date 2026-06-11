@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Scissors, MapPin, Phone, Mail, Clock } from "lucide-react";
+import { Scissors, MapPin, Phone, Mail } from "lucide-react";
 
 export default function Footer() {
   return (
@@ -9,12 +9,12 @@ export default function Footer() {
           {/* Brand & Description */}
           <div className="space-y-4">
             <Link href="/" className="flex items-center gap-2">
-              <Scissors className="h-5 w-5 text-primary" />
+              <Scissors className="h-5 w-5 text-white" />
               <span className="flex flex-col tracking-wider">
                 <span className="text-md font-bold text-gold-gradient leading-tight">
                   Ottawa Loctician
                 </span>
-                <span className="text-[9px] font-extrabold text-primary tracking-widest uppercase leading-none mt-0.5">
+                <span className="text-[9px] font-extrabold text-white tracking-widest uppercase leading-none mt-0.5">
                   IWA LOCZ
                 </span>
               </span>
@@ -26,7 +26,7 @@ export default function Footer() {
 
           {/* Quick Links */}
           <div className="space-y-3">
-            <h3 className="text-primary font-bold text-sm tracking-wider uppercase">
+            <h3 className="text-white font-bold text-sm tracking-wider uppercase">
               Explore
             </h3>
             <ul className="space-y-2 text-sm text-zinc-400">
@@ -55,7 +55,7 @@ export default function Footer() {
 
           {/* Contact info */}
           <div className="space-y-3">
-            <h3 className="text-primary font-bold text-sm tracking-wider uppercase">
+            <h3 className="text-white font-bold text-sm tracking-wider uppercase">
               Contact Us
             </h3>
             <ul className="space-y-2.5 text-sm text-zinc-400">
@@ -78,21 +78,21 @@ export default function Footer() {
 
           {/* Hours */}
           <div className="space-y-3">
-            <h3 className="text-primary font-bold text-sm tracking-wider uppercase">
+            <h3 className="text-white font-bold text-sm tracking-wider uppercase">
               Opening Hours
             </h3>
             <ul className="space-y-2 text-sm text-zinc-400">
-              <li className="flex items-center justify-between">
+              <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
                 <span>Monday - Friday</span>
-                <span className="text-zinc-300">9:00 AM - 8:00 PM</span>
+                <span className="text-zinc-300 text-xs sm:text-sm">9:00 AM - 8:00 PM</span>
               </li>
-              <li className="flex items-center justify-between">
+              <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
                 <span>Saturday</span>
-                <span className="text-zinc-300">9:00 AM - 6:00 PM</span>
+                <span className="text-zinc-300 text-xs sm:text-sm">9:00 AM - 6:00 PM</span>
               </li>
-              <li className="flex items-center justify-between">
+              <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
                 <span>Sunday</span>
-                <span className="text-zinc-300">10:00 AM - 4:00 PM</span>
+                <span className="text-zinc-300 text-xs sm:text-sm">10:00 AM - 4:00 PM</span>
               </li>
             </ul>
           </div>

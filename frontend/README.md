@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Salon Booking Platform — Frontend
+
+React/Next.js frontend for the salon booking system.
+
+## Overview
+
+This application provides the customer-facing booking experience:
+- service browsing and stylist selection
+- appointment slot reservation
+- Stripe payment checkout
+- customer dashboard and reviews
+
+## Architecture
+
+- `app/` — Next.js App Router pages, layouts, and providers
+- `components/` — reusable UI components and widgets
+- `lib/` — API client, request utilities, and shared helpers
+- `store/` — global state management with Zustand
+- `public/` — static assets and images
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+cd frontend
+npm install
+cp .env.local.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create `frontend/.env.local` from the template:
 
-## Learn More
+```bash
+cp .env.local.example .env.local
+```
 
-To learn more about Next.js, take a look at the following resources:
+Set the backend API URL and Stripe key:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## API Integration
 
-## Deploy on Vercel
+The frontend communicates with the backend using `fetch`/`axios` through `NEXT_PUBLIC_API_URL`.
+Example request flow:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```js
+const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Available Scripts
+
+- `npm run dev` — start the local development server
+- `npm run build` — build the app for production
+- `npm run start` — run the production build
+- `npm run lint` — run ESLint checks
+
+## Deployment
+
+Build the app and deploy to Vercel, Netlify, or any Next.js-compatible host.
+
+```bash
+npm run build
+npm run start
+```
+
+For Vercel, set `NEXT_PUBLIC_API_URL` in project environment variables.
+
+### Docker
+
+Build and run the frontend container locally:
+
+```bash
+docker build -t salon-frontend ./frontend
+docker run -e NEXT_PUBLIC_API_URL=http://localhost:5000/api -p 3000:3000 salon-frontend
+```
+
+If using root compose, the frontend is available at `http://localhost:3000`.
+
+## Notes
+
+- The frontend expects the backend API at `NEXT_PUBLIC_API_URL`
+- The client supports CSR and SSR where applicable

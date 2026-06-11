@@ -66,7 +66,7 @@ CREATE TABLE "payments" (
     "appointmentId" TEXT NOT NULL,
     "stripePaymentIntentId" TEXT NOT NULL,
     "amount" DECIMAL(10,2) NOT NULL,
-    "currency" TEXT NOT NULL DEFAULT 'usd',
+    "currency" TEXT NOT NULL DEFAULT 'cad',
     "status" "StripePaymentStatus" NOT NULL DEFAULT 'PENDING',
     "paymentType" TEXT NOT NULL DEFAULT 'FULL',
     "metadata" JSONB,

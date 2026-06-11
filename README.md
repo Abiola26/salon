@@ -106,8 +106,107 @@ npm run dev                         # Start on http://localhost:3000
 ```bash
 cd backend
 npm test              # Run all integration tests
-npm run test:coverage # With coverage report
+npm run test:coverage # With coverage report and coverage thresholds
 ```
+
+Frontend checks:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+---
+
+## 📚 Documentation
+
+- `backend/README.md` — backend architecture, environment config, API usage, and tests
+- `frontend/README.md` — frontend architecture, env setup, and deployment
+
+---
+
+## 🧰 Developer Setup
+
+1. Install repo-level dependencies and Git hooks:
+
+```bash
+npm install
+```
+
+This installs `husky` and `lint-staged`, enabling pre-commit checks in the repository root.
+
+After install, `git commit` will run lint-staged on changed files and prevent commits with lint failures.
+
+2. Install backend dependencies:
+
+```bash
+cd backend
+npm install
+```
+
+3. Install frontend dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+4. Start the backend:
+
+```bash
+cd backend
+npm run dev
+```
+
+4. Start the frontend:
+
+```bash
+cd frontend
+npm run dev
+```
+
+---
+
+## 🔧 Environment Variables
+
+Backend env example: `backend/.env.example`
+
+Frontend env example: `frontend/.env.local.example`
+
+Important vars:
+
+- `DATABASE_URL`
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `EMAIL_USER`, `EMAIL_PASS`
+- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+
+---
+
+## 🚀 Deployment
+
+This repo is CI-ready with GitHub Actions in `.github/workflows/ci.yml`.
+
+Deploy the frontend to Vercel, Netlify, or any Next.js platform, and the backend to any Node.js host.
+
+### Docker
+
+Use the provided Dockerfiles and compose setup for local container-based development:
+
+```bash
+docker compose up --build
+```
+
+The compose stack includes:
+- `postgres` database
+- `backend` API on `http://localhost:5000`
+- `frontend` app on `http://localhost:3000`
+
+Use `docker compose down` to stop the services.
 
 ---
 
@@ -132,3 +231,11 @@ npm run test:coverage # With coverage report
 **Backend:** Node.js · Express · Prisma · PostgreSQL · JWT · Stripe · Twilio · Nodemailer · Winston · Zod · node-cron
 
 **Frontend:** Next.js 14 · TypeScript · TailwindCSS · TanStack Query · Zustand · Stripe.js · Lucide Icons
+
+## 🧪 Continuous Integration
+
+This repository includes GitHub Actions CI in `.github/workflows/ci.yml`.
+
+The workflow installs dependencies and runs:
+- backend lint and tests
+- frontend lint and build
