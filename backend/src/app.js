@@ -81,15 +81,30 @@ app.use(
 );
 
 // ─── Stripe Webhook — raw body MUST come before JSON parser ───────────────────
-// The /api/payments/webhook route uses express.raw() inline, so nothing needed here.
+app.use(
+  '/api/payments/webhook',
+  express.raw({ type: 'application/json', limit: '5mb' }),
+  (req, res, next) => {
+    req.rawBody = req.body;
+    next();
+  }
+);
+app.use(
+  '/api/v1/payments/webhook',
+  express.raw({ type: 'application/json', limit: '5mb' }),
+  (req, res, next) => {
+    req.rawBody = req.body;
+    next();
+  }
+);
 
 // ─── Body Parsers ─────────────────────────────────────────────────────────────
 app.use(
   express.json({
     limit: '10kb',
-    // Save raw body for Stripe webhook verification
+    // Save raw body for Stripe webhook verification as backup
     verify: (req, res, buf) => {
-      if (req.originalUrl.startsWith('/api/payments/webhook')) {
+      if (req.originalUrl.includes('/payments/webhook')) {
         req.rawBody = buf;
       }
     },

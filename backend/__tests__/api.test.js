@@ -10,6 +10,7 @@
 const request = require('supertest');
 const app = require('../src/app');
 const { prisma } = require('../src/config/db');
+const stripe = require('../src/config/stripe');
 
 // ─── Shared state across tests ────────────────────────────────────────────────
 let adminToken = '';
@@ -462,6 +463,45 @@ describe('Payments API', () => {
       .set('Authorization', `Bearer ${customerToken}`);
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('POST /api/payments/webhook — should parse raw body successfully even when payload is > 10kb', async () => {
+    const largePadding = 'a'.repeat(15 * 1024); // 15KB of data
+    const mockEvent = {
+      id: 'evt_test_123',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_test_123',
+          amount: 3000,
+          metadata: {
+            padding: largePadding,
+          },
+        },
+      },
+    };
+
+    const webhookConstructSpy = jest.spyOn(stripe.webhooks, 'constructEvent')
+      .mockImplementation((rawBody) => {
+        return JSON.parse(rawBody.toString());
+      });
+
+    const paymentService = require('../src/services/payment.service');
+    const handleSucceededSpy = jest.spyOn(paymentService, '_handlePaymentSucceeded')
+      .mockResolvedValue();
+
+    const res = await request(app)
+      .post('/api/payments/webhook')
+      .set('stripe-signature', 't=123,v1=abc')
+      .send(mockEvent);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ received: true });
+    expect(webhookConstructSpy).toHaveBeenCalled();
+    expect(handleSucceededSpy).toHaveBeenCalled();
+
+    webhookConstructSpy.mockRestore();
+    handleSucceededSpy.mockRestore();
   });
 });
 
