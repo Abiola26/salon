@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "start": "npx prisma migrate deploy && node src/server.js",
     "build": "echo 'No build step required'",
     "test": "jest --forceExit",
     "test:unit": "jest --forceExit --runInBand __tests__/unit",
@@ -45,6 +45,7 @@
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.12",
+    "prisma": "^5.11.0",
     "stripe": "^15.2.0",
     "swagger-ui-express": "^5.0.1",
     "twilio": "^6.0.2",
@@ -73,7 +74,6 @@
     "eslint": "^8.57.0",
     "jest": "^30.4.2",
     "nodemon": "^3.1.0",
-    "prisma": "^5.11.0",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
