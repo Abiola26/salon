@@ -232,6 +232,22 @@ Use `docker compose down` to stop the services.
 
 **Frontend:** Next.js 14 · TypeScript · TailwindCSS · TanStack Query · Zustand · Stripe.js · Lucide Icons
 
+## 🌐 Exposing Local Server (ngrok)
+
+We have provided an `ngrok.yml` configuration at the root to easily expose both the frontend and backend to the internet (highly useful for testing Stripe webhooks or local mobile/external API integrations).
+
+1. [Install ngrok](https://ngrok.com/download).
+2. Configure your authtoken (if you haven't already):
+   ```bash
+   ngrok config add-authtoken <your-auth-token>
+   ```
+3. Start both tunnels simultaneously using the root config:
+   ```bash
+   ngrok start --all --config ngrok.yml
+   ```
+
+---
+
 ## 🧪 Continuous Integration
 
 This repository includes GitHub Actions CI in `.github/workflows/ci.yml`.
