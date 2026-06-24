@@ -139,6 +139,11 @@ app.use('/api', performanceLogger);
 // ─── API Docs ─────────────────────────────────────────────────────────────────
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
+// Redirect root to Swagger API docs
+app.get('/', (req, res) => {
+  res.redirect('/api-docs');
+});
+
 // ─── API Routes (v1 canonical + /api alias) ───────────────────────────────────
 app.use('/api/v1', routes);
 app.use('/api', routes);
