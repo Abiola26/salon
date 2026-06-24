@@ -1,6 +1,8 @@
 # Backend Dockerfile for production
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -12,6 +14,9 @@ COPY src ./src
 RUN npx prisma generate
 
 FROM node:20-alpine AS runner
+
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
