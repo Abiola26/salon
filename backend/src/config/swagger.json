@@ -8,6 +8,10 @@
     {
       "url": "http://localhost:5000/api",
       "description": "Local Development Server"
+    },
+    {
+      "url": "https://salon-be-ogls.onrender.com/api",
+      "description": "Production Server"
     }
   ],
   "tags": [

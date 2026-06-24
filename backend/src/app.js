@@ -137,7 +137,20 @@ app.use('/api', globalLimiter);
 app.use('/api', performanceLogger);
 
 // ─── API Docs ─────────────────────────────────────────────────────────────────
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// Dynamically set the server URL based on the incoming request so Swagger
+// "Execute" calls the correct host in both local dev and on Render.
+app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const dynamicDoc = {
+    ...swaggerDocument,
+    servers: [
+      { url: `${protocol}://${host}/api`, description: 'Current Server' },
+      { url: 'http://localhost:5000/api', description: 'Local Development' },
+    ],
+  };
+  swaggerUi.setup(dynamicDoc)(req, res, next);
+});
 
 // Redirect root to Swagger API docs
 app.get('/', (req, res) => {
