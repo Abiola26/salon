@@ -51,14 +51,16 @@ if (NODE_ENV === 'production') {
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+const { BACKEND_URL } = require('./config/env');
 app.use(
   cors({
     origin: (origin, callback) => {
       const allowedOrigins = [
         CLIENT_URL,
+        BACKEND_URL,
         'http://localhost:3000',
         'http://localhost:5000', // Swagger UI served from same port
-      ];
+      ].filter(Boolean);
 
       // Allow requests with no origin (curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
@@ -69,6 +71,11 @@ app.use(
       }
 
       if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any *.onrender.com origin (covers Swagger UI on the deployed backend)
+      if (/^https:\/\/[^.]+\.onrender\.com$/.test(origin)) {
         return callback(null, true);
       }
 

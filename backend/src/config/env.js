@@ -32,6 +32,7 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().default('Salon Bookings <no-reply@salonbookings.com>'),
 
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
+  BACKEND_URL: z.string().url().optional(),
 
   RATE_LIMIT_WINDOW_MS: z.string().default(String(15 * 60 * 1000)),
   RATE_LIMIT_MAX: z.string().default('100'),
@@ -79,6 +80,7 @@ module.exports = {
   },
 
   CLIENT_URL: env.CLIENT_URL,
+  BACKEND_URL: env.BACKEND_URL || null,
 
   RATE_LIMIT: {
     WINDOW_MS: Number(env.RATE_LIMIT_WINDOW_MS),
