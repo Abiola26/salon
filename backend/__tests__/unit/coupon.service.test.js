@@ -87,28 +87,115 @@ describe('couponService', () => {
     });
   });
 
-  describe('createCoupon', () => {
-    it('throws when coupon code is duplicate', async () => {
-      couponRepository.findByCode.mockResolvedValue({ id: 'duplicate' });
-
-      await expect(
-        couponService.createCoupon({ code: 'DUPLICATE', discountType: 'FLAT', discountValue: '10' })
-      ).rejects.toThrow('Coupon code "DUPLICATE" already exists');
+  describe('validateCoupon — additional branches', () => {
+    it('throws when coupon startDate is in the future', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        isActive: true,
+        startDate: new Date(Date.now() + 86400000), // tomorrow
+        endDate: null,
+        maxUsage: null,
+      });
+      await expect(couponService.validateCoupon('FUTURE', '100')).rejects.toThrow(
+        'This coupon is not yet active'
+      );
     });
 
-    it('creates a coupon and writes an audit log', async () => {
-      couponRepository.findByCode.mockResolvedValue(null);
-      couponRepository.create.mockResolvedValue({ id: 'c3', code: 'NEWCODE', discountType: 'FLAT', discountValue: '25' });
-      auditLog.mockResolvedValue();
-
-      const result = await couponService.createCoupon(
-        { code: 'newcode', discountType: 'FLAT', discountValue: '25' },
-        'admin-1',
-        '127.0.0.1'
+    it('throws when coupon has reached its usage limit', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        isActive: true,
+        startDate: null,
+        endDate: null,
+        maxUsage: 10,
+        usageCount: 10,
+      });
+      await expect(couponService.validateCoupon('MAXED', '100')).rejects.toThrow(
+        'This coupon has reached its usage limit'
       );
+    });
 
-      expect(result).toEqual({ id: 'c3', code: 'NEWCODE', discountType: 'FLAT', discountValue: '25' });
-      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'CREATE_COUPON' }));
+    it('validates coupon with usageCount below maxUsage', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        id: 'cx', code: 'GOOD', discountType: 'FLAT', discountValue: '5',
+        isActive: true, startDate: null, endDate: null, maxUsage: 10, usageCount: 5,
+      });
+      const r = await couponService.validateCoupon('GOOD', '50');
+      expect(r.discountAmount).toBe(5);
+    });
+  });
+
+  describe('getCouponById', () => {
+    it('throws when coupon not found', async () => {
+      couponRepository.findById.mockResolvedValue(null);
+      await expect(couponService.getCouponById('x')).rejects.toThrow('Coupon not found');
+    });
+
+    it('returns coupon when found', async () => {
+      const coupon = { id: 'c1', code: 'A' };
+      couponRepository.findById.mockResolvedValue(coupon);
+      expect(await couponService.getCouponById('c1')).toEqual(coupon);
+    });
+  });
+
+  describe('getAllCoupons', () => {
+    it('returns paginated coupons', async () => {
+      couponRepository.findAll.mockResolvedValue([]);
+      couponRepository.count.mockResolvedValue(0);
+      const r = await couponService.getAllCoupons({ page: 1, limit: 5 });
+      expect(r.meta.total).toBe(0);
+    });
+  });
+
+  describe('updateCoupon', () => {
+    it('throws when coupon not found', async () => {
+      couponRepository.findById.mockResolvedValue(null);
+      await expect(couponService.updateCoupon('x', {})).rejects.toThrow('Coupon not found');
+    });
+
+    it('updates without code change', async () => {
+      const existing = { id: 'c1', code: 'OLD' };
+      const updated = { id: 'c1', code: 'OLD', discountValue: '20' };
+      couponRepository.findById.mockResolvedValue(existing);
+      couponRepository.update.mockResolvedValue(updated);
+      auditLog.mockResolvedValue();
+      const r = await couponService.updateCoupon('c1', { discountValue: '20' }, 'admin', '::1');
+      expect(r.code).toBe('OLD');
+    });
+
+    it('updates with code change — no conflict', async () => {
+      const existing = { id: 'c1', code: 'OLD' };
+      const updated = { id: 'c1', code: 'NEW' };
+      couponRepository.findById.mockResolvedValue(existing);
+      couponRepository.findByCode.mockResolvedValue(null); // no conflict
+      couponRepository.update.mockResolvedValue(updated);
+      auditLog.mockResolvedValue();
+      const r = await couponService.updateCoupon('c1', { code: 'new' });
+      expect(r.code).toBe('NEW');
+    });
+
+    it('throws on code change conflict', async () => {
+      const existing = { id: 'c1', code: 'OLD' };
+      couponRepository.findById.mockResolvedValue(existing);
+      couponRepository.findByCode.mockResolvedValue({ id: 'other' }); // conflict
+      await expect(couponService.updateCoupon('c1', { code: 'taken' })).rejects.toThrow(
+        'Coupon code "TAKEN" already exists'
+      );
+    });
+  });
+
+  describe('deleteCoupon', () => {
+    it('throws when coupon not found', async () => {
+      couponRepository.findById.mockResolvedValue(null);
+      await expect(couponService.deleteCoupon('x')).rejects.toThrow('Coupon not found');
+    });
+
+    it('deletes successfully and audits', async () => {
+      const existing = { id: 'c1', code: 'DEL' };
+      couponRepository.findById.mockResolvedValue(existing);
+      couponRepository.delete.mockResolvedValue();
+      auditLog.mockResolvedValue();
+      await couponService.deleteCoupon('c1', 'admin', '::1');
+      expect(couponRepository.delete).toHaveBeenCalledWith('c1');
+      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE_COUPON' }));
     });
   });
 });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRouter } from "next/navigation";
 import {
@@ -65,8 +65,9 @@ export default function UserManagementPage() {
   const { data: usersResponse, isLoading, error } = useQuery({
     queryKey: ["admin-users-list", page, filterRole],
     queryFn: async () => {
-      const roleQuery = filterRole !== "ALL" ? `&role=${filterRole}` : "";
-      const res = await api.get(`/users?page=${page}&limit=${limit}${roleQuery}`);
+      const params: Record<string, string | number> = { page, limit };
+      if (filterRole !== "ALL") params.role = filterRole;
+      const res = await api.get("/users", { params });
       return res.data;
     },
     enabled: !!currentUser && currentUser.role === "ADMIN",
@@ -88,7 +89,7 @@ export default function UserManagementPage() {
 
   // Mutations
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
       const res = await api.put(`/users/${id}`, data);
       return res.data;
     },
@@ -96,8 +97,8 @@ export default function UserManagementPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-users-list"] });
       setEditUser(null);
     },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || "Failed to update user");
+    onError: (err: unknown) => {
+      console.error(getApiErrorMessage(err, "Failed to update user"));
     },
   });
 
@@ -110,8 +111,8 @@ export default function UserManagementPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-users-list"] });
       setDeleteId(null);
     },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || "Failed to delete user");
+    onError: (err: unknown) => {
+      console.error(getApiErrorMessage(err, "Failed to delete user"));
     },
   });
 
@@ -421,7 +422,7 @@ export default function UserManagementPage() {
                   </label>
                   <select
                     value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as any)}
+                    onChange={(e) => setEditRole(e.target.value as "ADMIN" | "CUSTOMER")}
                     className="w-full px-4 py-2.5 border border-zinc-850 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary cursor-pointer"
                   >
                     <option value="CUSTOMER">CUSTOMER</option>
@@ -528,8 +529,9 @@ export default function UserManagementPage() {
                   <span className="font-mono text-xs text-zinc-300 truncate max-w-[200px]">{selectedUserProfile.id}</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(selectedUserProfile.id);
-                      alert("User ID copied to clipboard!");
+                      navigator.clipboard.writeText(selectedUserProfile.id).then(() => {
+                        // Brief visual confirmation could be added here if needed
+                      });
                     }}
                     className="text-[10px] text-primary hover:underline cursor-pointer"
                   >

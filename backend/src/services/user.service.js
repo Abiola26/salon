@@ -13,9 +13,8 @@ const userService = {
   },
 
   async updateProfile(userId, dto) {
-    await userRepository.findById(userId).then((u) => {
-      if (!u) throw ApiError.notFound('User not found');
-    });
+    const user = await userRepository.findById(userId);
+    if (!user) throw ApiError.notFound('User not found');
     return userRepository.update(userId, dto);
   },
 

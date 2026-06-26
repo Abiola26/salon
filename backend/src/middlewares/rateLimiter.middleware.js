@@ -5,13 +5,14 @@ const { RATE_LIMIT } = require('../config/env');
 const ApiError = require('../utils/ApiError');
 
 const createRateLimiter = (options = {}) => {
+  const message = options.message || 'Too many requests, please try again later';
   return rateLimit({
     windowMs: options.windowMs || RATE_LIMIT.WINDOW_MS,
     max: options.max || RATE_LIMIT.MAX,
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res, next) => {
-      next(ApiError.tooManyRequests('Too many requests, please try again later'));
+      next(ApiError.tooManyRequests(message));
     },
     ...options,
   });

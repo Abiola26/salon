@@ -71,6 +71,4 @@ router.use('/analytics', analyticsRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/staff', staffRoutes);
 router.use('/coupons', couponRoutes);
-
 module.exports = router;
-

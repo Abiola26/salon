@@ -19,7 +19,6 @@ import {
   Loader2,
   AlertCircle,
   ChevronRight,
-  ChevronLeft,
   Lock,
   MessageSquare,
   Tag,
@@ -107,7 +106,6 @@ function BookingWizardContent() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Booking process states
-  const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -203,7 +201,7 @@ function BookingWizardContent() {
   const loyaltyDiscount =
     redeemPoints && userLoyaltyPoints > 0
       ? Math.min(
-          userLoyaltyPoints * 1.0,
+          userLoyaltyPoints,
           (servicePrice - couponDiscount) * 0.5
         )
       : 0;
@@ -334,8 +332,7 @@ function BookingWizardContent() {
     onMutate: () => {
       setBookingError(null);
     },
-    onSuccess: ({ appointmentId: createdAppointmentId, clientSecret: secret, amount }) => {
-      setAppointmentId(createdAppointmentId);
+    onSuccess: ({ clientSecret: secret, amount }) => {
       setClientSecret(secret);
       setPaymentAmount(amount);
       setStep(5);
@@ -356,7 +353,8 @@ function BookingWizardContent() {
     createBookingMutation.mutate();
   };
 
-  const handlePaymentSuccess = (_paymentIntentId: string) => {
+  const handlePaymentSuccess = (paymentIntentId: string) => {
+    console.log("Payment successful, Intent ID:", paymentIntentId);
     confetti({
       particleCount: 150,
       spread: 80,
@@ -365,6 +363,7 @@ function BookingWizardContent() {
     });
     setStep(6);
   };
+
 
   const getDayName = (date: Date) =>
     date.toLocaleDateString("en-US", { weekday: "short" });
@@ -398,7 +397,6 @@ function BookingWizardContent() {
         {/* Step Indicators */}
         <div className="glass-panel p-4 rounded-2xl flex items-center justify-between overflow-x-auto gap-2">
           {stepLabels.map((s) => {
-            const Icon = s.icon;
             const isActive = step === s.num;
             const isCompleted = step > s.num;
             return (
@@ -711,7 +709,7 @@ function BookingWizardContent() {
 
                 {staffList.length === 0 && (
                   <div className="col-span-full glass-panel p-6 rounded-xl text-center text-zinc-500 text-sm border border-zinc-800">
-                    No dedicated stylists for this service — we'll assign our
+                    No dedicated stylists for this service — we&apos;ll assign our
                     best available expert.
                   </div>
                 )}
@@ -1309,7 +1307,7 @@ function BookingWizardContent() {
             <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-3 text-xs text-amber-300 flex items-center gap-2">
               <Star className="h-4 w-4 text-amber-400 shrink-0" />
               <span>
-                You'll earn{" "}
+                You&apos;ll earn{" "}
                 <strong>
                   {Math.floor((paymentAmount / 100) * 0.1)} loyalty points
                 </strong>{" "}

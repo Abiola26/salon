@@ -26,7 +26,7 @@ export default function Home() {
   }, []);
 
   // Fetch reviews from backend
-  const { data: reviewsResponse, isLoading } = useQuery({
+  const { data: reviewsResponse } = useQuery({
     queryKey: ["public-reviews"],
     queryFn: () => api.get("/reviews"),
     enabled: mounted,

@@ -119,5 +119,178 @@ describe('authService', () => {
         'Refresh token is invalid or has been revoked'
       );
     });
+
+    it('rotates refresh token and returns new tokens on success', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com', refreshToken: 'refresh-token' });
+      tokenUtils.generateAccessToken.mockReturnValue('new-access-token');
+      tokenUtils.generateRefreshToken.mockReturnValue('new-refresh-token');
+      userRepository.update.mockResolvedValue({});
+
+      const result = await authService.refreshToken('refresh-token', '127.0.0.1');
+
+      expect(result).toEqual({ accessToken: 'new-access-token', refreshToken: 'new-refresh-token' });
+      expect(userRepository.update).toHaveBeenCalledWith('1', { refreshToken: 'new-refresh-token' });
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'TOKEN_REFRESHED' }));
+    });
+  });
+
+  describe('logout', () => {
+    it('nullifies user refresh token on logout', async () => {
+      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com' });
+      userRepository.update.mockResolvedValue({});
+
+      await authService.logout('1', '127.0.0.1');
+
+      expect(userRepository.update).toHaveBeenCalledWith('1', { refreshToken: null });
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_LOGOUT' }));
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('returns without error and logs audit when email is not registered', async () => {
+      userRepository.findByEmail.mockResolvedValue(null);
+
+      await authService.forgotPassword('missing@example.com', '127.0.0.1');
+
+      expect(userRepository.update).not.toHaveBeenCalled();
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PASSWORD_RESET_REQUESTED', details: expect.stringContaining('non-existing') })
+      );
+    });
+
+    it('generates reset token, updates user, and sends email on success', async () => {
+      const user = { id: '1', email: 'test@example.com' };
+      userRepository.findByEmail.mockResolvedValue(user);
+      tokenUtils.generateRandomToken.mockReturnValue('random-token');
+      tokenUtils.hashToken.mockReturnValue('hashed-token');
+      userRepository.update.mockResolvedValue({});
+      emailUtils.sendPasswordResetEmail.mockResolvedValue({});
+
+      await authService.forgotPassword('test@example.com', '127.0.0.1');
+
+      expect(userRepository.update).toHaveBeenCalledWith(
+        '1',
+        expect.objectContaining({ resetPasswordToken: 'hashed-token' })
+      );
+      expect(emailUtils.sendPasswordResetEmail).toHaveBeenCalledWith(user, 'random-token');
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PASSWORD_RESET_REQUESTED', userId: '1' })
+      );
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('throws when reset token is invalid or expired', async () => {
+      tokenUtils.hashToken.mockReturnValue('hashed-token');
+      userRepository.findByResetToken.mockResolvedValue(null);
+
+      await expect(authService.resetPassword('token', 'NewPass123!', '127.0.0.1')).rejects.toThrow(
+        'Password reset token is invalid or has expired'
+      );
+    });
+
+    it('updates password and nullifies reset fields and refresh token on success', async () => {
+      tokenUtils.hashToken.mockReturnValue('hashed-token');
+      userRepository.findByResetToken.mockResolvedValue({ id: '1', email: 'test@example.com' });
+      bcrypt.hash.mockResolvedValue('hashedPassword');
+      userRepository.update.mockResolvedValue({});
+
+      await authService.resetPassword('token', 'NewPass123!', '127.0.0.1');
+
+      expect(bcrypt.hash).toHaveBeenCalledWith('NewPass123!', 12);
+      expect(userRepository.update).toHaveBeenCalledWith('1', {
+        password: 'hashedPassword',
+        resetPasswordToken: null,
+        resetPasswordExpiry: null,
+        refreshToken: null,
+      });
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PASSWORD_RESET_COMPLETED', userId: '1' })
+      );
+    });
+  });
+
+  // ─── logout ───────────────────────────────────────────────────────────────
+
+  describe('logout', () => {
+    it('clears refreshToken and audits with user email when user is found', async () => {
+      userRepository.findByIdFull.mockResolvedValue({ id: 'u1', email: 'alice@example.com' });
+      userRepository.update.mockResolvedValue({});
+
+      await authService.logout('u1', '::1');
+
+      expect(userRepository.update).toHaveBeenCalledWith('u1', { refreshToken: null });
+      // exercises the `user?.email` truthy branch
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'USER_LOGOUT',
+          details: expect.stringContaining('alice@example.com'),
+        })
+      );
+    });
+
+    it('falls back to userId in audit details when user record is null (exercises || branch)', async () => {
+      // user was deleted between JWT issuance and logout call
+      userRepository.findByIdFull.mockResolvedValue(null);
+      userRepository.update.mockResolvedValue({});
+
+      await authService.logout('ghost-id', '::1');
+
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'USER_LOGOUT',
+          details: expect.stringContaining('ghost-id'),
+        })
+      );
+    });
+  });
+
+  // ─── Default ipAddress = null branches ────────────────────────────────────
+  // Each of logout/forgotPassword/resetPassword has `ipAddress = null`.
+  // Istanbul tracks whether the default (null) is used. We always pass '::1'
+  // in our other tests, so we add one call per function omitting ipAddress.
+
+  describe('default ipAddress = null branch coverage', () => {
+    it('logout without ipAddress uses null default', async () => {
+      userRepository.findByIdFull.mockResolvedValue({ id: 'u2', email: 'b@b.com' });
+      userRepository.update.mockResolvedValue({});
+      await authService.logout('u2'); // no ipAddress
+      expect(userRepository.update).toHaveBeenCalledWith('u2', { refreshToken: null });
+    });
+
+    it('forgotPassword without ipAddress uses null default', async () => {
+      userRepository.findByEmail.mockResolvedValue(null);
+      await authService.forgotPassword('anon@x.com'); // no ipAddress
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null })
+      );
+    });
+
+    it('resetPassword without ipAddress uses null default', async () => {
+      tokenUtils.hashToken.mockReturnValue('ht');
+      userRepository.findByResetToken.mockResolvedValue(null);
+      await expect(authService.resetPassword('tok', 'NewPw1')).rejects.toThrow(
+        'Password reset token is invalid or has expired'
+      );
+    });
+  });
+
+  // ─── forgotPassword (non-existent email) ──────────────────────────────────
+
+  describe('forgotPassword — non-existent user branch', () => {
+    it('audits and returns silently when email is not registered', async () => {
+      userRepository.findByEmail.mockResolvedValue(null);
+
+      // Should NOT throw — anti-enumeration behaviour
+      await expect(authService.forgotPassword('nobody@example.com', '::1')).resolves.toBeUndefined();
+
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PASSWORD_RESET_REQUESTED',
+          userId: null,
+        })
+      );
+    });
   });
 });

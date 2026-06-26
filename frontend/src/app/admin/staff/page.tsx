@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import {
   Users,
   Plus,
@@ -96,8 +96,8 @@ export default function AdminStaffPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-staff"] });
       closeModal();
     },
-    onError: (err: any) => {
-      setFormError(err.response?.data?.message || "Failed to create staff member");
+    onError: (err: unknown) => {
+      setFormError(getApiErrorMessage(err, "Failed to create staff member"));
     },
   });
 
@@ -109,8 +109,8 @@ export default function AdminStaffPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-staff"] });
       closeModal();
     },
-    onError: (err: any) => {
-      setFormError(err.response?.data?.message || "Failed to update staff member");
+    onError: (err: unknown) => {
+      setFormError(getApiErrorMessage(err, "Failed to update staff member"));
     },
   });
 
@@ -121,8 +121,8 @@ export default function AdminStaffPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-staff"] });
       setDeleteId(null);
     },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || "Failed to delete staff member");
+    onError: (err: unknown) => {
+      console.error(getApiErrorMessage(err, "Failed to delete staff member"));
     },
   });
 

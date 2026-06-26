@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import {
   Tag,
   Plus,
@@ -84,8 +84,8 @@ export default function AdminCouponsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
       closeModal();
     },
-    onError: (err: any) => {
-      setFormError(err.response?.data?.message || "Failed to create coupon");
+    onError: (err: unknown) => {
+      setFormError(getApiErrorMessage(err, "Failed to create coupon"));
     },
   });
 
@@ -96,8 +96,8 @@ export default function AdminCouponsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
       closeModal();
     },
-    onError: (err: any) => {
-      setFormError(err.response?.data?.message || "Failed to update coupon");
+    onError: (err: unknown) => {
+      setFormError(getApiErrorMessage(err, "Failed to update coupon"));
     },
   });
 
@@ -107,8 +107,8 @@ export default function AdminCouponsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
       setDeleteId(null);
     },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || "Failed to delete coupon");
+    onError: (err: unknown) => {
+      console.error(getApiErrorMessage(err, "Failed to delete coupon"));
     },
   });
 

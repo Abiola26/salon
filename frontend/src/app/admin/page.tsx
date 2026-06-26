@@ -18,10 +18,6 @@ import {
   Cell,
   PieChart,
   Pie,
-  Legend,
-  LineChart,
-  Line,
-  ComposedChart,
 } from "recharts";
 import {
   TrendingUp,
@@ -33,9 +29,7 @@ import {
   Scissors,
   Loader2,
   AlertCircle,
-  Clock,
   ChevronRight,
-  ArrowUpRight,
   ClipboardList,
   CheckCircle,
 } from "lucide-react";

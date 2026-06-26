@@ -14,6 +14,7 @@ export default function Navbar() {
   const router = useRouter();
   const { user, logout, isHydrated } = useAuthStore();
   const [mounted, setMounted] = useState(false);
+  const [copiedUserId, setCopiedUserId] = useState(false);
 
   // Reset dropdown when route changes
   useEffect(() => {
@@ -321,12 +322,14 @@ export default function Navbar() {
                   <span className="font-mono text-xs text-zinc-300 truncate max-w-[200px]">{user.id}</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(user.id);
-                      alert("User ID copied to clipboard!");
+                      navigator.clipboard.writeText(user.id).then(() => {
+                        setCopiedUserId(true);
+                        setTimeout(() => setCopiedUserId(false), 2000);
+                      });
                     }}
-                    className="text-[10px] text-primary hover:underline cursor-pointer"
+                    className="text-[10px] text-primary hover:underline cursor-pointer shrink-0"
                   >
-                    Copy
+                    {copiedUserId ? "Copied!" : "Copy"}
                   </button>
                 </div>
               </div>

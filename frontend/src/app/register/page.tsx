@@ -14,10 +14,7 @@ const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   email: z.string().min(1, "Email is required").email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  phone: z
-    .string()
-    .optional()
-    .transform((val) => (val === "" ? undefined : val)),
+  phone: z.string().optional(),
 });
 
 type RegisterValues = z.infer<typeof registerSchema>;
@@ -42,8 +39,7 @@ function RegisterForm() {
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(registerSchema) as any,
+    resolver: zodResolver(registerSchema),
     defaultValues: {
       name: "",
       email: "",
@@ -56,8 +52,13 @@ function RegisterForm() {
     setError(null);
     setLoading(true);
 
+    const payload = {
+      ...data,
+      phone: data.phone === "" ? undefined : data.phone,
+    };
+
     try {
-      const response = await api.post("/auth/register", data);
+      const response = await api.post("/auth/register", payload);
       const { user: registeredUser, accessToken, refreshToken } = response.data.data;
 
       // Save credentials in Zustand

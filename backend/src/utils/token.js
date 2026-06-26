@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { JWT } = require('../config/env');
 
@@ -39,7 +40,6 @@ const verifyRefreshToken = (token) => {
  * Generate a cryptographic random token (for password reset, etc.)
  */
 const generateRandomToken = () => {
-  const crypto = require('crypto');
   return crypto.randomBytes(32).toString('hex');
 };
 
@@ -47,7 +47,6 @@ const generateRandomToken = () => {
  * Hash a plain token for safe DB storage
  */
 const hashToken = (token) => {
-  const crypto = require('crypto');
   return crypto.createHash('sha256').update(token).digest('hex');
 };
 

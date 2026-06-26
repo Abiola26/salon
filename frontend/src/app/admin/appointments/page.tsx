@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -14,13 +14,10 @@ import {
   X,
   Loader2,
   AlertCircle,
-  Search,
   Filter,
-  Trash2,
   ChevronLeft,
   ChevronRight,
   MessageSquare,
-  DollarSign,
 } from "lucide-react";
 import Calendar from "@/components/Calendar";
 
@@ -76,7 +73,6 @@ export default function AdminAppointmentsPage() {
   const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date());
   const [rescheduleTime, setRescheduleTime] = useState<string | null>(null);
-  const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   // Local helper to format Date to YYYY-MM-DD
@@ -98,7 +94,13 @@ export default function AdminAppointmentsPage() {
   const { data: appointmentsResponse, isLoading, refetch } = useQuery({
     queryKey: ["admin-appointments", filterStatus, filterPayment, filterDate, page],
     queryFn: async () => {
-      const params: any = {
+      const params: {
+        page: number;
+        limit: number;
+        status?: string;
+        paymentStatus?: string;
+        date?: string;
+      } = {
         page,
         limit,
       };
@@ -145,8 +147,8 @@ export default function AdminAppointmentsPage() {
       await api.patch(`/appointments/${id}/confirm`);
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to confirm appointment.");
+    } catch (err: unknown) {
+      console.error(getApiErrorMessage(err, "Failed to confirm appointment."));
     } finally {
       setConfirmingId(null);
     }
@@ -158,15 +160,24 @@ export default function AdminAppointmentsPage() {
       await api.delete(`/appointments/${id}`);
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to cancel appointment.");
+    } catch (err: unknown) {
+      console.error(getApiErrorMessage(err, "Failed to cancel appointment."));
     } finally {
       setCancellingId(null);
     }
   };
 
+  interface RescheduleMutationBody {
+    appointmentDate: string;
+    appointmentTime: string;
+  }
+
+  interface RescheduleMutationContext {
+    previous: unknown;
+  }
+
   const rescheduleMutation = useMutation({
-    mutationFn: async ({ id, body }: { id: string; body: any }) => {
+    mutationFn: async ({ id, body }: { id: string; body: RescheduleMutationBody }) => {
       const res = await api.put(`/appointments/${id}`, body);
       return res.data;
     },
@@ -174,22 +185,22 @@ export default function AdminAppointmentsPage() {
       await queryClient.cancelQueries({ queryKey: ["admin-appointments"] });
       const key = ["admin-appointments", filterStatus, filterPayment, filterDate, page];
       const previous = queryClient.getQueryData(key);
-      queryClient.setQueryData(key, (old: any) => {
+      queryClient.setQueryData(key, (old: { data: Appointment[] } | undefined) => {
         if (!old) return old;
         return {
           ...old,
-          data: old.data.map((a: any) =>
+          data: old.data.map((a) =>
             a.id === id ? { ...a, appointmentDate: body.appointmentDate, appointmentTime: body.appointmentTime } : a
           ),
         };
       });
-      return { previous };
+      return { previous } satisfies RescheduleMutationContext;
     },
-    onError: (err: any, variables: any, context: any) => {
-      setRescheduleError(err.response?.data?.message || "Failed to reschedule appointment.");
-      if (context?.previous) {
+    onError: (err: unknown, _variables, context) => {
+      setRescheduleError(getApiErrorMessage(err, "Failed to reschedule appointment."));
+      if ((context as RescheduleMutationContext | undefined)?.previous) {
         const key = ["admin-appointments", filterStatus, filterPayment, filterDate, page];
-        queryClient.setQueryData(key, context.previous);
+        queryClient.setQueryData(key, (context as RescheduleMutationContext).previous);
       }
     },
     onSettled: () => {
@@ -198,13 +209,11 @@ export default function AdminAppointmentsPage() {
     },
     onSuccess: () => {
       setReschedulingAppt(null);
-      setRescheduleLoading(false);
     },
   });
 
-  const handleRescheduleSubmit = async () => {
+  const handleRescheduleSubmit = () => {
     if (!reschedulingAppt || !rescheduleTime) return;
-    setRescheduleLoading(true);
     setRescheduleError(null);
     rescheduleMutation.mutate({
       id: reschedulingAppt.id,
@@ -218,22 +227,6 @@ export default function AdminAppointmentsPage() {
     setFilterDate("");
     setPage(1);
   };
-
-  const getDayName = (date: Date) => {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
-  };
-
-  const getRescheduleDays = () => {
-    const list = [];
-    const today = new Date();
-    for (let i = 0; i < 14; i++) {
-      const d = new Date();
-      d.setDate(today.getDate() + i);
-      list.push(d);
-    }
-    return list;
-  };
-  const rescheduleDays = getRescheduleDays();
 
   if (!isHydrated || !user) {
     return (
@@ -671,18 +664,18 @@ export default function AdminAppointmentsPage() {
               {/* Submit / Cancel */}
               <div className="flex gap-4 pt-4 border-t border-zinc-900/60">
                 <button
-                  disabled={rescheduleLoading}
+                  disabled={rescheduleMutation.isPending}
                   onClick={() => setReschedulingAppt(null)}
                   className="flex-1 bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-800 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  disabled={!rescheduleTime || rescheduleLoading}
+                  disabled={!rescheduleTime || rescheduleMutation.isPending}
                   onClick={handleRescheduleSubmit}
                   className="flex-1 bg-primary hover:bg-primary-hover text-black py-2.5 rounded-xl text-xs font-extrabold transition duration-300 shadow-lg shadow-primary/10 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  {rescheduleLoading ? (
+                  {rescheduleMutation.isPending ? (
                     <Loader2 className="animate-spin h-4 w-4" />
                   ) : (
                     <span>Confirm Reschedule</span>

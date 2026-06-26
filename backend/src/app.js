@@ -9,7 +9,7 @@ const hpp = require('hpp');
 
 require('express-async-errors');
 
-const { NODE_ENV, CLIENT_URL } = require('./config/env');
+const { NODE_ENV, CLIENT_URL, BACKEND_URL } = require('./config/env');
 const logger = require('./config/logger');
 const routes = require('./routes/index');
 const { globalLimiter } = require('./middlewares/rateLimiter.middleware');
@@ -51,7 +51,6 @@ if (NODE_ENV === 'production') {
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const { BACKEND_URL } = require('./config/env');
 app.use(
   cors({
     origin: (origin, callback) => {

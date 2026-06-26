@@ -17,6 +17,32 @@ const logger = require('../config/logger');
 const REMINDER_HOURS_BEFORE = 2; // Remind 2 hours before appointment
 const TOLERANCE_MINUTES = 5;     // ±5 minute tolerance window
 
+const getNewYorkTimeParts = (date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const partMap = {};
+  for (const part of parts) {
+    partMap[part.type] = part.value;
+  }
+
+  let hour = partMap.hour;
+  if (hour === '24') hour = '00';
+
+  return {
+    dateStr: `${partMap.year}-${partMap.month}-${partMap.day}`,
+    timeStr: `${hour}:${partMap.minute}`,
+  };
+};
+
 async function runSmsReminderJob() {
   logger.info('⏰ [SMS Reminder Job] Running...');
 
@@ -27,16 +53,15 @@ async function runSmsReminderJob() {
   const windowStart = new Date(targetTime.getTime() - TOLERANCE_MINUTES * 60 * 1000);
   const windowEnd = new Date(targetTime.getTime() + TOLERANCE_MINUTES * 60 * 1000);
 
-  // Normalize to just the date for the DB date field
-  const targetDate = targetTime.toISOString().split('T')[0];
+  // Normalize to just the local date for the DB date field in NY timezone
+  const { dateStr: targetDate } = getNewYorkTimeParts(targetTime);
 
-  // Build the list of HH:mm times in the window
+  // Build the list of HH:mm times in the window in NY timezone
   const windowTimes = [];
   const cursor = new Date(windowStart);
   while (cursor <= windowEnd) {
-    const h = String(cursor.getHours()).padStart(2, '0');
-    const m = String(cursor.getMinutes()).padStart(2, '0');
-    windowTimes.push(`${h}:${m}`);
+    const { timeStr } = getNewYorkTimeParts(cursor);
+    windowTimes.push(timeStr);
     cursor.setMinutes(cursor.getMinutes() + 1);
   }
 
@@ -83,13 +108,13 @@ async function runSmsReminderJob() {
  * Call this once from server.js at startup.
  */
 function initSmsReminderJob() {
-  // Run at the top of every hour: '0 * * * *'
-  cron.schedule('0 * * * *', runSmsReminderJob, {
+  // Run every 30 minutes: '*/30 * * * *'
+  cron.schedule('*/30 * * * *', runSmsReminderJob, {
     scheduled: true,
     timezone: 'America/New_York', // Adjust to your salon's timezone
   });
 
-  logger.info('⏰ [SMS Reminder Job] Scheduled — runs every hour');
+  logger.info('⏰ [SMS Reminder Job] Scheduled — runs every 30 minutes');
 }
 
 module.exports = { initSmsReminderJob, runSmsReminderJob };

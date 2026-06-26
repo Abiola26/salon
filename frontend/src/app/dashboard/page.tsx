@@ -19,9 +19,7 @@ import {
   Trash2,
   XCircle,
   Sparkles,
-  ChevronRight,
   MessageSquare,
-  HelpCircle,
   Star,
   Gift,
 } from "lucide-react";
@@ -97,13 +95,8 @@ export default function CustomerDashboardPage() {
     return `${year}-${month}-${day}`;
   };
 
-  const getDayName = (date: Date) => {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
-  };
-
-  const getMonthName = (date: Date) => {
-    return date.toLocaleDateString("en-US", { month: "short" });
-  };
+  const getDayName = (date: Date) =>
+    date.toLocaleDateString("en-US", { weekday: "short" });
 
   // Redirect to login if user not authenticated
   useEffect(() => {
@@ -115,7 +108,7 @@ export default function CustomerDashboardPage() {
   }, [user, isHydrated, router]);
 
   // Fetch customer appointments
-  const { data: appointmentsResponse, isLoading: listLoading, refetch } = useQuery({
+  const { data: appointmentsResponse, isLoading: listLoading } = useQuery({
     queryKey: ["appointments"],
     queryFn: async () => {
       const res = await api.get("/appointments");

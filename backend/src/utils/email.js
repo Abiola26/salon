@@ -187,7 +187,6 @@ const sendRefundEmail = async (user, payment, service) => {
     text: `Refund of $${amount} processed for ${service.name}. Reference: ${payment.stripePaymentIntentId}`,
   });
 };
-
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
@@ -198,4 +197,3 @@ module.exports = {
   sendCancellationEmail,
   sendRefundEmail,
 };
-

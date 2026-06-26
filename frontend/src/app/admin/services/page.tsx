@@ -2,25 +2,21 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuthStore } from "@/store/useAuthStore";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import {
   Scissors,
   Plus,
   Edit2,
   Trash2,
-  CheckCircle,
-  XCircle,
   Loader2,
   AlertCircle,
   Clock,
   DollarSign,
-  ToggleLeft,
-  ToggleRight,
 } from "lucide-react";
 
 interface Service {
@@ -36,8 +32,8 @@ interface Service {
 const serviceFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   description: z.string().min(5, "Description must be at least 5 characters").max(500),
-  duration: z.coerce
-    .number()
+  duration: z
+    .number({ message: "Duration must be a number" })
     .int()
     .min(5, "Duration must be at least 5 minutes")
     .max(480, "Duration cannot exceed 8 hours"),
@@ -48,7 +44,7 @@ const serviceFormSchema = z.object({
     },
     { message: "Price must be a valid positive number" }
   ),
-  isActive: z.boolean().default(true),
+  isActive: z.boolean(),
 });
 
 type ServiceFormValues = z.infer<typeof serviceFormSchema>;
@@ -91,7 +87,7 @@ export default function AdminServicesPage() {
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<ServiceFormValues>({
-    resolver: zodResolver(serviceFormSchema) as any,
+    resolver: zodResolver(serviceFormSchema),
     defaultValues: {
       name: "",
       description: "",
@@ -135,8 +131,8 @@ export default function AdminServicesPage() {
       queryClient.invalidateQueries({ queryKey: ["services"] });
       setIsModalOpen(false);
       setEditingService(null);
-    } catch (err: any) {
-      setFormError(err.response?.data?.message || "Operation failed. Please try again.");
+    } catch (err: unknown) {
+      setFormError(getApiErrorMessage(err, "Operation failed. Please try again."));
     }
   };
 
@@ -149,8 +145,8 @@ export default function AdminServicesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["admin-services-list"] });
       queryClient.invalidateQueries({ queryKey: ["services"] });
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to update status.");
+    } catch (err: unknown) {
+      console.error(getApiErrorMessage(err, "Failed to update status."));
     } finally {
       setLoadingActionId(null);
     }
@@ -163,8 +159,8 @@ export default function AdminServicesPage() {
       await api.delete(`/services/${id}`);
       queryClient.invalidateQueries({ queryKey: ["admin-services-list"] });
       queryClient.invalidateQueries({ queryKey: ["services"] });
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to delete service.");
+    } catch (err: unknown) {
+      console.error(getApiErrorMessage(err, "Failed to delete service."));
     } finally {
       setLoadingActionId(null);
     }
@@ -404,7 +400,7 @@ export default function AdminServicesPage() {
                       required
                       type="number"
                       placeholder="60"
-                      {...register("duration")}
+                      {...register("duration", { valueAsNumber: true })}
                       className="w-full px-4 py-2.5 border border-zinc-800 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary"
                     />
                     {errors.duration && (
