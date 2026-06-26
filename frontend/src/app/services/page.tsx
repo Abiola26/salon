@@ -36,19 +36,19 @@ export default function ServicesPage() {
   const services: Service[] = servicesResponse?.data || [];
 
   return (
-    <div className="w-full bg-dark-bg min-h-screen py-16 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-12">
+    <div className="w-full bg-dark-bg min-h-screen py-10 sm:py-16 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-8 sm:space-y-12">
         
         {/* Header */}
-        <div className="text-center space-y-4 max-w-xl mx-auto">
+        <div className="text-center space-y-3 sm:space-y-4 max-w-xl mx-auto">
           <div className="inline-flex items-center gap-1.5 bg-dark-gold/20 border border-primary/20 px-3.5 py-1 rounded-full text-xs font-semibold tracking-wider text-primary uppercase">
             <Sparkles className="h-3 w-3" />
             Our Services Menu
           </div>
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight">
             Exquisite Salon Treatments
           </h1>
-          <p className="text-zinc-400 text-sm leading-relaxed">
+          <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed">
             Browse our curated collection of luxury hair, color, and treatment services designed to elevate and refine your style.
           </p>
         </div>

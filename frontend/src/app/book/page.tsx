@@ -380,29 +380,29 @@ function BookingWizardContent() {
   ];
 
   return (
-    <div className="w-full bg-dark-bg min-h-screen py-16 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="w-full bg-dark-bg min-h-screen py-10 sm:py-16 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
         {/* Title */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight">
             Book Your{" "}
             <span className="text-gold-gradient">IWA LOCZ Experience</span>
           </h1>
-          <p className="text-zinc-400 text-sm max-w-md mx-auto">
+          <p className="text-zinc-400 text-xs sm:text-sm max-w-md mx-auto">
             Reserve custom-tailored styling, premium coloring, and wellness
             treatments instantly.
           </p>
         </div>
 
         {/* Step Indicators */}
-        <div className="glass-panel p-4 rounded-2xl flex items-center justify-between overflow-x-auto gap-2">
+        <div className="glass-panel p-2.5 sm:p-4 rounded-2xl flex items-center justify-between overflow-x-auto gap-1.5 sm:gap-2">
           {stepLabels.map((s) => {
             const isActive = step === s.num;
             const isCompleted = step > s.num;
             return (
               <div
                 key={s.num}
-                className={`flex items-center gap-1.5 shrink-0 ${
+                className={`flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                   isActive
                     ? "text-primary"
                     : isCompleted
@@ -411,7 +411,7 @@ function BookingWizardContent() {
                 }`}
               >
                 <div
-                  className={`h-7 w-7 rounded-full border flex items-center justify-center text-xs font-bold transition ${
+                  className={`h-6 w-6 sm:h-7 sm:w-7 rounded-full border flex items-center justify-center text-[10px] sm:text-xs font-bold transition ${
                     isActive
                       ? "bg-primary text-black border-primary shadow-lg shadow-primary/20"
                       : isCompleted
@@ -420,16 +420,16 @@ function BookingWizardContent() {
                   }`}
                 >
                   {isCompleted ? (
-                    <CheckCircle className="h-3.5 w-3.5" />
+                    <CheckCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   ) : (
                     s.num
                   )}
                 </div>
-                <span className="text-xs font-semibold hidden sm:block">
+                <span className="text-[10px] sm:text-xs font-semibold hidden sm:block">
                   {s.label}
                 </span>
                 {s.num < 6 && (
-                  <ChevronRight className="h-3 w-3 text-zinc-700" />
+                  <ChevronRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-zinc-700" />
                 )}
               </div>
             );
@@ -438,9 +438,9 @@ function BookingWizardContent() {
 
         {/* ─── STEP 1: SERVICE CHOICE ─── */}
         {step === 1 && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Scissors className="h-5 w-5 text-primary" />
+          <div className="space-y-4 sm:space-y-6">
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+              <Scissors className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               1. Choose a Luxury Treatment
             </h2>
             {servicesLoading ? (
@@ -458,18 +458,18 @@ function BookingWizardContent() {
                       setSelectedStaff("any");
                       setStep(2);
                     }}
-                    className={`text-left glass-card p-6 rounded-2xl relative overflow-hidden transition-all duration-300 border flex flex-col justify-between cursor-pointer ${
+                    className={`text-left glass-card p-4 sm:p-6 rounded-2xl relative overflow-hidden transition-all duration-300 border flex flex-col justify-between cursor-pointer ${
                       selectedService?.id === service.id
                         ? "border-primary bg-dark-gold/10"
                         : "border-zinc-900/60 hover:border-primary/40 bg-zinc-950/20"
                     }`}
                   >
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-start">
-                        <span className="text-lg font-bold text-white">
+                    <div className="space-y-1.5 sm:space-y-2">
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-sm sm:text-base font-bold text-white leading-snug">
                           {service.name}
                         </span>
-                        <span className="text-lg font-extrabold text-primary">
+                        <span className="text-sm sm:text-base font-extrabold text-primary shrink-0">
                           ${parseFloat(service.price).toFixed(2)}
                         </span>
                       </div>
@@ -477,7 +477,7 @@ function BookingWizardContent() {
                         {service.description}
                       </p>
                     </div>
-                    <div className="flex justify-between items-center mt-6 pt-4 border-t border-zinc-900/80 text-xs text-zinc-400 w-full">
+                    <div className="flex justify-between items-center mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-zinc-900/80 text-xs text-zinc-400 w-full">
                       <div className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5 text-primary" />
                         <span>{service.duration} mins</span>
@@ -495,17 +495,17 @@ function BookingWizardContent() {
 
         {/* ─── STEP 2: DATE & TIME SELECT ─── */}
         {step === 2 && selectedService && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5 text-primary" />
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-0">
+              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 2. Select Date & Time
               </h2>
               <button
                 onClick={() => setStep(1)}
-                className="text-xs text-zinc-400 hover:text-primary transition"
+                className="text-xs text-zinc-400 hover:text-primary transition self-start sm:self-auto"
               >
-                Change Service ({selectedService.name})
+                ← Change Service
               </button>
             </div>
 
@@ -563,7 +563,7 @@ function BookingWizardContent() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-3">
                   {slots.map((slot, idx) => {
                     const isSelected = selectedTime === slot.time;
                     return (
@@ -571,7 +571,7 @@ function BookingWizardContent() {
                         key={idx}
                         disabled={!slot.available}
                         onClick={() => setSelectedTime(slot.time)}
-                        className={`py-3 px-2 rounded-xl text-sm font-bold border transition text-center cursor-pointer ${
+                        className={`py-2 sm:py-3 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold border transition text-center cursor-pointer ${
                           isSelected
                             ? "bg-primary text-black border-primary shadow-md"
                             : slot.available
@@ -579,7 +579,7 @@ function BookingWizardContent() {
                             : "bg-zinc-950/80 text-zinc-600 border-zinc-950 cursor-not-allowed opacity-35"
                         }`}
                       >
-                        <Clock className="h-3.5 w-3.5 inline-block -mt-0.5 mr-1 text-primary opacity-60" />
+                        <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 inline-block -mt-0.5 mr-0.5 sm:mr-1 text-primary opacity-60" />
                         {slot.time}
                       </button>
                     );
@@ -613,55 +613,41 @@ function BookingWizardContent() {
         )}
 
         {/* ─── STEP 3: SELECT STYLIST ─── */}
-        {step === 3 && selectedService && selectedTime && (
-          <div className="space-y-6">
+        {step === 3 && selectedService && selectedDate && selectedTime && (
+          <div className="space-y-4 sm:space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
+              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 3. Choose Your Stylist
               </h2>
               <button
                 onClick={() => setStep(2)}
                 className="text-xs text-zinc-400 hover:text-primary transition"
               >
-                ← Back to Schedule
+                ← Back
               </button>
             </div>
-
-            <p className="text-zinc-500 text-xs">
-              Select a preferred stylist or let us auto-assign the first
-              available expert for your treatment.
-            </p>
 
             {staffLoading ? (
               <div className="flex flex-col items-center justify-center py-12 space-y-3">
                 <Loader2 className="animate-spin h-8 w-8 text-primary" />
-                <p className="text-xs text-zinc-500">Loading stylists...</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* "Any Stylist" card */}
                 <button
                   onClick={() => setSelectedStaff("any")}
-                  className={`p-5 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
+                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
                     selectedStaff === "any"
                       ? "border-primary bg-dark-gold/10"
                       : "border-zinc-800 bg-zinc-950/20 hover:border-zinc-700"
                   }`}
                 >
-                  <div className="h-14 w-14 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
-                    <Sparkles className="h-7 w-7 text-primary" />
+                  <div className="h-12 w-12 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+                    <Sparkles className="h-6 w-6 text-primary" />
                   </div>
                   <div>
                     <p className="font-bold text-white text-sm">Any Stylist</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      Auto-assign the first available expert
-                    </p>
-                    {selectedStaff === "any" && (
-                      <span className="inline-block mt-1.5 text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">
-                        Selected
-                      </span>
-                    )}
+                    <p className="text-xs text-zinc-500">First available</p>
                   </div>
                 </button>
 
@@ -669,50 +655,28 @@ function BookingWizardContent() {
                   <button
                     key={s.id}
                     onClick={() => setSelectedStaff(s)}
-                    className={`p-5 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
+                    className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
                       selectedStaff !== "any" &&
                       (selectedStaff as Staff)?.id === s.id
                         ? "border-primary bg-dark-gold/10"
                         : "border-zinc-800 bg-zinc-950/20 hover:border-zinc-700"
                     }`}
                   >
-                    <div className="h-14 w-14 rounded-full overflow-hidden border border-zinc-700 shrink-0">
+                    <div className="h-12 w-12 rounded-full overflow-hidden border border-zinc-700 shrink-0">
                       {s.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={s.image}
-                          alt={s.name}
-                          className="h-full w-full object-cover"
-                        />
+                        <img src={s.image} alt={s.name} className="h-full w-full object-cover" />
                       ) : (
                         <div className="h-full w-full bg-zinc-800 flex items-center justify-center">
-                          <User className="h-6 w-6 text-zinc-500" />
+                          <User className="h-5 w-5 text-zinc-500" />
                         </div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-white text-sm">{s.name}</p>
-                      {s.bio && (
-                        <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">
-                          {s.bio}
-                        </p>
-                      )}
-                      {selectedStaff !== "any" &&
-                        (selectedStaff as Staff)?.id === s.id && (
-                          <span className="inline-block mt-1.5 text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">
-                            Selected
-                          </span>
-                        )}
+                      {s.bio && <p className="text-xs text-zinc-500 truncate">{s.bio}</p>}
                     </div>
                   </button>
                 ))}
-
-                {staffList.length === 0 && (
-                  <div className="col-span-full glass-panel p-6 rounded-xl text-center text-zinc-500 text-sm border border-zinc-800">
-                    No dedicated stylists for this service — we&apos;ll assign our
-                    best available expert.
-                  </div>
-                )}
               </div>
             )}
 
@@ -734,17 +698,15 @@ function BookingWizardContent() {
         )}
 
         {/* ─── STEP 4: CONFIRM & AUTH ─── */}
-        {step === 4 && selectedService && selectedTime && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <User className="h-5 w-5 text-primary" />
+        {step === 4 && selectedService && selectedDate && selectedTime && (
+          <div className="space-y-4 sm:space-y-6">
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+              <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               4. Review & Client Profile
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Summary + Discount Panel */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
               <div className="space-y-4 md:col-span-1">
-                {/* Appointment Summary */}
                 <div className="glass-panel p-5 rounded-2xl border border-primary/20 space-y-3 h-fit">
                   <h3 className="font-extrabold text-xs text-primary tracking-wider uppercase">
                     Order Summary

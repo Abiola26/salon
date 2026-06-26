@@ -174,13 +174,13 @@ export default function AdminDashboardPage() {
   const completionRate = totalAppts > 0 ? ((completedAppts / totalAppts) * 100).toFixed(1) : 0;
 
   return (
-    <div className="w-full bg-dark-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="w-full bg-dark-bg min-h-screen py-8 sm:py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
         
         {/* Header Title */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-900 pb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 border-b border-zinc-900 pb-5 sm:pb-6">
           <div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Ottawa Loctician <span className="text-gold-gradient">Analytics</span>
             </h1>
             <p className="text-xs text-zinc-400 mt-1">

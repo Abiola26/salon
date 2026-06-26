@@ -185,25 +185,25 @@ export default function Navbar() {
 
       {/* Mobile Nav Menu */}
       {isOpen && (
-        <div className="md:hidden glass-panel border-b border-dark-border py-4 px-2 space-y-3">
+        <div className="md:hidden glass-panel border-b border-dark-border py-4 px-3 space-y-2 max-h-[calc(100vh-4.5rem)] overflow-y-auto">
           <Link
             href="/"
             onClick={() => setIsOpen(false)}
-            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
           >
             Home
           </Link>
           <Link
             href="/services"
             onClick={() => setIsOpen(false)}
-            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
           >
             Services
           </Link>
           <Link
             href="/book"
             onClick={() => setIsOpen(false)}
-            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+            className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
           >
             Book Now
           </Link>
@@ -214,7 +214,7 @@ export default function Navbar() {
                 <Link
                   href="/dashboard"
                   onClick={() => setIsOpen(false)}
-                  className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                  className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                 >
                   My Bookings
                 </Link>
@@ -223,42 +223,42 @@ export default function Navbar() {
                   <Link
                     href="/admin"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Admin Dashboard
                   </Link>
                   <Link
                     href="/admin/appointments"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Manage Appointments
                   </Link>
                   <Link
                     href="/admin/services"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Manage Services
                   </Link>
                   <Link
                     href="/admin/staff"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Stylist Roster
                   </Link>
                   <Link
                     href="/admin/coupons"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Promo Coupons
                   </Link>
                   <Link
                     href="/admin/users"
                     onClick={() => setIsOpen(false)}
-                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-md font-medium"
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     User Management
                   </Link>

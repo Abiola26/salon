@@ -238,12 +238,12 @@ export default function AdminAppointmentsPage() {
   }
 
   return (
-    <div className="w-full bg-dark-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="w-full bg-dark-bg min-h-screen py-8 sm:py-10 px-4 sm:px-6 lg:px-8 text-white">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
         
         {/* Title */}
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Manage Salon <span className="text-gold-gradient">Appointments</span>
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
@@ -252,7 +252,7 @@ export default function AdminAppointmentsPage() {
         </div>
 
         {/* Filters Toolbar */}
-        <div className="glass-panel p-6 rounded-2xl border border-zinc-900 space-y-4">
+        <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-zinc-900 space-y-4">
           <div className="flex items-center gap-2 text-sm font-bold text-primary">
             <Filter className="h-4 w-4" />
             <span>Search Filters</span>

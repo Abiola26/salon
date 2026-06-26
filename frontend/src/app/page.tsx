@@ -75,7 +75,7 @@ export default function Home() {
             Ottawa Premium Loc Styling
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-none">
+          <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-white leading-tight sm:leading-none">
             Unveil Your True <br />
             <span className="text-gold-gradient">Radiant Elegance</span>
           </h1>
@@ -84,17 +84,17 @@ export default function Home() {
             Experience the gold standard in premium hair dressing, luxury coloring, and master styling. Indulge in an atmosphere designed to pamper.
           </p>
 
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 pt-3 sm:pt-4">
             <Link
               href="/book"
-              className="w-full sm:w-auto bg-primary hover:bg-primary-hover text-black font-extrabold px-8 py-4 rounded-full transition duration-300 text-base shadow-lg shadow-primary/20 flex items-center justify-center gap-2 hover:scale-[1.02] transform cursor-pointer"
+              className="w-full sm:w-auto bg-primary hover:bg-primary-hover text-black font-extrabold px-7 sm:px-8 py-3.5 sm:py-4 rounded-full transition duration-300 text-sm sm:text-base shadow-lg shadow-primary/20 flex items-center justify-center gap-2 hover:scale-[1.02] transform cursor-pointer"
             >
-              <Calendar className="h-5 w-5" />
+              <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
               Book Appointment
             </Link>
             <Link
               href="/services"
-              className="w-full sm:w-auto bg-transparent hover:bg-zinc-900 text-zinc-200 border border-zinc-700 hover:border-zinc-500 px-8 py-4 rounded-full transition duration-300 text-base flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto bg-transparent hover:bg-zinc-900 text-zinc-200 border border-zinc-700 hover:border-zinc-500 px-7 sm:px-8 py-3.5 sm:py-4 rounded-full transition duration-300 text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer"
             >
               View Services Menu
             </Link>

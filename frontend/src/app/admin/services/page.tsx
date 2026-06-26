@@ -176,13 +176,13 @@ export default function AdminServicesPage() {
   }
 
   return (
-    <div className="w-full bg-dark-bg min-h-screen py-10 px-4 sm:px-6 lg:px-8 text-white">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="w-full bg-dark-bg min-h-screen py-8 sm:py-10 px-4 sm:px-6 lg:px-8 text-white">
+      <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
         
         {/* Title */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-900 pb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 border-b border-zinc-900 pb-5 sm:pb-6">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Manage Salon <span className="text-gold-gradient">Services Catalog</span>
             </h1>
             <p className="text-xs text-zinc-400 mt-1">
@@ -194,7 +194,7 @@ export default function AdminServicesPage() {
               setEditingService(null);
               setIsModalOpen(true);
             }}
-            className="bg-primary hover:bg-primary-hover text-black font-extrabold px-6 py-3 rounded-xl transition duration-300 text-xs shadow-lg shadow-primary/10 flex items-center gap-1.5 cursor-pointer"
+            className="bg-primary hover:bg-primary-hover text-black font-extrabold px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl transition duration-300 text-xs shadow-lg shadow-primary/10 flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <Plus className="h-4 w-4" />
             Add New Service
@@ -218,7 +218,7 @@ export default function AdminServicesPage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {services.map((service) => (
               <div
                 key={service.id}

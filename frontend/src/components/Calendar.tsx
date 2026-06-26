@@ -49,7 +49,7 @@ export default function Calendar({ selectedDate, onSelectDate, days = 14, classN
               onKeyDown={(e) => handleKeyDown(e, date)}
               aria-pressed={isSelected}
               aria-label={`Select ${date.toDateString()}`}
-              className={`flex flex-col items-center justify-center p-3 rounded-xl border shrink-0 w-16 transition duration-200 cursor-pointer ${
+              className={`flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl border shrink-0 w-14 sm:w-16 sm:p-3 transition duration-200 cursor-pointer ${
                 isSelected
                   ? "bg-primary text-black border-primary font-bold shadow-md shadow-primary/10"
                   : "bg-zinc-950/20 text-zinc-400 border-zinc-900 hover:border-zinc-800"
