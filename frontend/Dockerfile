@@ -16,8 +16,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/.next ./.next
-RUN mkdir -p ./public
-COPY --from=builder /app/public ./public
+# Copy public from the build context directly — next build never writes here,
+# so this is identical to --from=builder but avoids cache-miss failures when
+# the directory is empty and Docker cached the builder layer before it existed.
+COPY public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/package.json ./package.json
 
