@@ -1,7 +1,7 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api" || "http://salon-be.onrender.com/api";
 
 interface ApiErrorPayload {
   message?: string;
@@ -133,7 +133,7 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         useAuthStore.getState().logout();
         isRefreshing = false;
-        
+
         // Redirect if in browser
         if (typeof window !== "undefined") {
           window.location.href = "/login";
