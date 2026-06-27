@@ -44,7 +44,7 @@ services:
     ports:
       - '3000:3000'
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:5000/api || http://salon-be.onrender.com/api
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api || https://salon-be-ogls.onrender.com/api
     depends_on:
       - backend
 
