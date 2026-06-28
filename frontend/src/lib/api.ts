@@ -1,9 +1,14 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/useAuthStore";
 
+const isProd = process.env.NODE_ENV === "production";
+const DEFAULT_API_URL = isProd
+  ? "https://salon-be-ogls.onrender.com/api"
+  : "http://localhost:5000/api";
+
 const API_BASE_URL = typeof window !== "undefined"
   ? "/api"
-  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api");
+  : (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL);
 
 interface ApiErrorPayload {
   message?: string;
