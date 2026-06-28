@@ -47,7 +47,7 @@ services:
     plan: free
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        value: https://salon-backend.onrender.com/api # Update with your actual backend URL after deployment
+        value: https://salon-be-ogls.onrender.com/api
 
 databases:
   - name: salon-db
