@@ -22,7 +22,7 @@ services:
       - key: BCRYPT_SALT_ROUNDS
         value: "12"
       - key: CLIENT_URL
-        value: https://salon-frontend.onrender.com # Update with your actual frontend URL after deployment
+        value: https://salon-fe.onrender.com
       - key: STRIPE_SECRET_KEY
         sync: false # Set in the Render Dashboard under Environment Variables
       - key: STRIPE_WEBHOOK_SECRET
