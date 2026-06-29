@@ -2,13 +2,13 @@ import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const isProd = process.env.NODE_ENV === "production";
-const DEFAULT_API_URL = isProd
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || (isProd
   ? "https://salon-be-ogls.onrender.com/api"
-  : "http://localhost:5000/api";
+  : "http://localhost:5000/api");
 
 const API_BASE_URL = typeof window !== "undefined"
   ? "/api"
-  : (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL);
+  : DEFAULT_API_URL;
 
 interface ApiErrorPayload {
   message?: string;
@@ -69,7 +69,6 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Handle token rotation
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string | null) => void;
@@ -91,10 +90,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as RetryableRequestConfig | undefined;
-
-    // Check if the error is 401 Unauthorized and not already retried
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      // If we are already refreshing, push this request to the queue
       if (isRefreshing) {
         return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -118,30 +114,24 @@ api.interceptors.response.use(
       }
 
       try {
-        // Request token refresh
         const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
           refreshToken,
         });
 
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
 
-        // Update Zustand store
         useAuthStore.getState().updateTokens(newAccessToken, newRefreshToken);
 
-        // Process any queued requests with the new token
         processQueue(null, newAccessToken);
         isRefreshing = false;
 
-        // Retry the original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh token failed -> log out user
         processQueue(refreshError, null);
         useAuthStore.getState().logout();
         isRefreshing = false;
 
-        // Redirect if in browser
         if (typeof window !== "undefined") {
           window.location.href = "/login";
         }
