@@ -78,6 +78,11 @@ app.use(
         return callback(null, true);
       }
 
+      // Allow any *.vercel.app origin (covers Vercel preview and production deployments)
+      if (/^https:\/\/[^.]+\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
       callback(new Error(`CORS: Origin ${origin} not allowed`));
     },
     credentials: true,
