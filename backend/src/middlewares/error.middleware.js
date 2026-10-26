@@ -4,6 +4,35 @@ const logger = require('../config/logger');
 const ApiError = require('../utils/ApiError');
 const { NODE_ENV } = require('../config/env');
 
+// Fields that must never reach the log stream
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'newPassword',
+  'currentPassword',
+  'confirmPassword',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'authorization',
+  'secret',
+  'apiKey',
+  'cardNumber',
+  'cvc',
+]);
+
+/**
+ * Deep-clones a value with sensitive keys masked. Safe against cycles.
+ */
+const redact = (value, depth = 0) => {
+  if (value === null || typeof value !== 'object' || depth > 4) return value;
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    out[k] = SENSITIVE_KEYS.has(k) ? '[REDACTED]' : redact(v, depth + 1);
+  }
+  return out;
+};
+
 /**
  * Global error handling middleware
  */
@@ -44,13 +73,13 @@ const errorHandler = (err, req, res, _next) => {
 
   const statusCode = error.statusCode || 500;
 
-  // Log server errors
+  // Log server errors (request body redacted — may contain passwords/tokens)
   if (statusCode >= 500) {
     logger.error(`[${req.method}] ${req.path} — ${statusCode}: ${err.message}`, {
       stack: err.stack,
-      body: req.body,
-      params: req.params,
-      query: req.query,
+      body: redact(req.body),
+      params: redact(req.params),
+      query: redact(req.query),
     });
   } else {
     logger.warn(`[${req.method}] ${req.path} — ${statusCode}: ${error.message}`);

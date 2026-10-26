@@ -120,21 +120,19 @@ const paymentService = {
       return;
     }
 
-    await paymentRepository.updateByStripeIntentId(paymentIntent.id, {
-      status: 'SUCCEEDED',
-    });
-
-    const appointment = await appointmentRepository.findById(payment.appointmentId);
-    const servicePrice = parseFloat(appointment.service.price);
-    const newAmountPaid = parseFloat(appointment.amountPaid) + parseFloat(payment.amount);
-
-    const paymentStatus = newAmountPaid >= servicePrice ? 'PAID' : 'PARTIAL';
-
-    await appointmentRepository.update(payment.appointmentId, {
-      paymentStatus,
-      amountPaid: newAmountPaid,
-      status: 'CONFIRMED',
-    });
+    // Idempotency: Stripe retries webhooks until 2xx. CAS-claim + appointment
+    // update run in ONE transaction; duplicates return null and are ack'd.
+    const appointment = await paymentRepository.processSucceeded(
+      paymentIntent.id,
+      payment.appointmentId,
+      payment.amount
+    );
+    if (!appointment) {
+      logger.info(
+        `Duplicate payment_intent.succeeded ignored for intent ${paymentIntent.id} (already processed)`
+      );
+      return;
+    }
 
     // Send confirmation email
     const user = await userRepository.findById(payment.userId);
@@ -144,22 +142,32 @@ const paymentService = {
     const appointmentService = require('./appointment.service');
     appointmentService.creditLoyaltyPoints(payment.appointmentId, payment.amount).catch(() => {});
 
-    logger.info(`Payment succeeded for appointment ${payment.appointmentId} — status: ${paymentStatus}`);
+    logger.info(
+      `Payment succeeded for appointment ${payment.appointmentId} — status: ${appointment.paymentStatus}`
+    );
   },
 
   async _handlePaymentFailed(paymentIntent) {
-    await paymentRepository.updateByStripeIntentId(paymentIntent.id, {
-      status: 'FAILED',
-    }).catch(() => {});
+    const claim = await paymentRepository.claimFailed(paymentIntent.id);
+    if (claim.count === 0) {
+      logger.info(
+        `payment_intent.payment_failed ignored for intent ${paymentIntent.id} (already terminal)`
+      );
+      return;
+    }
     logger.warn(`Payment failed for intent: ${paymentIntent.id}`);
   },
 
   async _handleRefund(charge) {
     const paymentIntentId = charge.payment_intent;
     if (paymentIntentId) {
-      await paymentRepository.updateByStripeIntentId(paymentIntentId, {
-        status: 'REFUNDED',
-      }).catch(() => {});
+      const claim = await paymentRepository.claimRefunded(paymentIntentId);
+      if (claim.count === 0) {
+        logger.info(
+          `charge.refunded ignored for intent ${paymentIntentId} (not in SUCCEEDED state)`
+        );
+        return;
+      }
       logger.info(`Refund processed for intent: ${paymentIntentId}`);
     }
   },

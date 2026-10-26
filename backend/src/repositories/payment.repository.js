@@ -46,6 +46,70 @@ const paymentRepository = {
   updateByStripeIntentId: (stripePaymentIntentId, data) =>
     prisma.payment.update({ where: { stripePaymentIntentId }, data }),
 
+  /**
+   * Idempotent claim for Stripe webhooks: transitions PENDING/FAILED → SUCCEEDED
+   * at most once per intent. Returns { count } — 0 means a duplicate delivery
+   * (or unknown intent) must be ignored.
+   */
+  claimSucceeded: (stripePaymentIntentId) =>
+    prisma.payment.updateMany({
+      where: { stripePaymentIntentId, status: { in: ['PENDING', 'FAILED'] } },
+      data: { status: 'SUCCEEDED' },
+    }),
+
+  /**
+   * Full "payment succeeded" processing in ONE transaction:
+   * 1. CAS-claims the payment (PENDING/FAILED → SUCCEEDED) — duplicates return null.
+   * 2. Increments appointment.amountPaid, recomputes paymentStatus, and confirms
+   *    only a PENDING appointment (a late webhook never resurrects CANCELLED).
+   * Returns the updated appointment, or null when the event was a duplicate.
+   */
+  processSucceeded: (stripePaymentIntentId, appointmentId, amount) =>
+    prisma.$transaction(async (tx) => {
+      const claim = await tx.payment.updateMany({
+        where: { stripePaymentIntentId, status: { in: ['PENDING', 'FAILED'] } },
+        data: { status: 'SUCCEEDED' },
+      });
+      if (claim.count === 0) return null;
+
+      const updated = await tx.appointment.update({
+        where: { id: appointmentId },
+        data: { amountPaid: { increment: amount } },
+        include: { service: { select: { price: true } } },
+      });
+
+      const newAmountPaid = parseFloat(updated.amountPaid);
+      const servicePrice = parseFloat(updated.service.price);
+      const paymentStatus = newAmountPaid >= servicePrice ? 'PAID' : 'PARTIAL';
+
+      const data = { paymentStatus };
+      if (updated.status === 'PENDING') data.status = 'CONFIRMED';
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data,
+        include: {
+          service: true,
+          staff: { select: { id: true, name: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+    }),
+
+  /** Guarded FAILED transition — never downgrades SUCCEEDED/REFUNDED. */
+  claimFailed: (stripePaymentIntentId) =>
+    prisma.payment.updateMany({
+      where: { stripePaymentIntentId, status: 'PENDING' },
+      data: { status: 'FAILED' },
+    }),
+
+  /** Guarded REFUNDED transition — only from SUCCEEDED. */
+  claimRefunded: (stripePaymentIntentId) =>
+    prisma.payment.updateMany({
+      where: { stripePaymentIntentId, status: 'SUCCEEDED' },
+      data: { status: 'REFUNDED' },
+    }),
+
   getTotalRevenue: () =>
     prisma.payment.aggregate({
       where: { status: 'SUCCEEDED' },

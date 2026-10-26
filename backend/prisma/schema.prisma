@@ -172,8 +172,12 @@ model Appointment {
   payments Payment[]
   review   Review?
 
-  // Prevent double booking: same date + time + staff can only be booked once (non-cancelled)
-  @@unique([appointmentDate, appointmentTime, staffId, status], name: "unique_slot")
+  // Slot exclusivity is enforced in code, NOT by a unique index:
+  // appointment.service.js takes a per-date Postgres advisory lock inside a
+  // transaction and then runs a duration-aware overlap check (checkSlotConflict).
+  // Do NOT re-add a unique constraint on (date, time, staff[, status]) — the old
+  // "unique_slot" included `status` (PENDING + CONFIRMED could coexist at the
+  // same slot) and NULL staffId defeated it entirely in Postgres.
   @@index([userId])
   @@index([serviceId])
   @@index([staffId])

@@ -9,7 +9,7 @@ const hpp = require('hpp');
 
 require('express-async-errors');
 
-const { NODE_ENV, CLIENT_URL, BACKEND_URL } = require('./config/env');
+const { NODE_ENV, CLIENT_URL, BACKEND_URL, ALLOWED_ORIGINS, CORS_ALLOW_WILDCARD } = require('./config/env');
 const logger = require('./config/logger');
 const routes = require('./routes/index');
 const { globalLimiter } = require('./middlewares/rateLimiter.middleware');
@@ -54,11 +54,12 @@ if (NODE_ENV === 'production') {
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Exact-match allowlist (dev localhost only outside development)
       const allowedOrigins = [
         CLIENT_URL,
         BACKEND_URL,
-        'http://localhost:3000',
-        'http://localhost:5000', // Swagger UI served from same port
+        ...ALLOWED_ORIGINS,
+        ...(NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:5000']),
       ].filter(Boolean);
 
       // Allow requests with no origin (curl, Postman, server-to-server)
@@ -73,17 +74,19 @@ app.use(
         return callback(null, true);
       }
 
-      // Allow any *.onrender.com origin (covers Swagger UI on the deployed backend)
-      if (/^https:\/\/[^.]+\.onrender\.com$/.test(origin)) {
+      // Temporary wildcards (CORS_ALLOW_WILDCARD=true) for deployed Swagger UI
+      // and Vercel preview/production deployments. Set CORS_ALLOW_WILDCARD=false
+      // and list exact origins in ALLOWED_ORIGINS to close these.
+      if (CORS_ALLOW_WILDCARD && /^https:\/\/[^.]+\.onrender\.com$/.test(origin)) {
+        return callback(null, true);
+      }
+      if (CORS_ALLOW_WILDCARD && /^https:\/\/[^.]+\.vercel\.app$/.test(origin)) {
         return callback(null, true);
       }
 
-      // Allow any *.vercel.app origin (covers Vercel preview and production deployments)
-      if (/^https:\/\/[^.]+\.vercel\.app$/.test(origin)) {
-        return callback(null, true);
-      }
-
-      callback(new Error(`CORS: Origin ${origin} not allowed`));
+      // Reject WITHOUT throwing — an error here would surface as a 500
+      logger.warn(`CORS: blocked origin ${origin}`);
+      callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

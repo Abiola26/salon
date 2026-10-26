@@ -42,38 +42,15 @@ const appointmentService = {
     }
 
     // ── Resolve Staff ─────────────────────────────────────────────────────────
-    let staffId = dto.staffId || null;
+    const staffId = dto.staffId || null;
     if (staffId) {
       const staff = await staffRepository.findById(staffId);
       if (!staff || !staff.isActive) throw ApiError.notFound('Selected stylist not found or inactive');
       const offersService = staff.services.some((s) => s.id === dto.serviceId);
       if (!offersService) throw ApiError.badRequest('Selected stylist does not offer this service');
-    } else {
-      // Auto-assign first available stylist for this service
-      const staffList = await staffRepository.findByServiceId(dto.serviceId);
-      for (const candidate of staffList) {
-        const conflict = await appointmentRepository.checkSlotConflict(
-          dto.appointmentDate, dto.appointmentTime, null, candidate.id
-        );
-        if (!conflict) {
-          staffId = candidate.id;
-          break;
-        }
-      }
-      // If no staff found (no stylists for service), fall back to no-staff booking
     }
 
-    // ── Double booking Check ──────────────────────────────────────────────────
-    const conflict = await appointmentRepository.checkSlotConflict(
-      dto.appointmentDate, dto.appointmentTime, null, staffId
-    );
-    if (conflict) {
-      throw ApiError.conflict(
-        `The time slot ${dto.appointmentTime} on ${dto.appointmentDate} is already booked for this stylist. Please choose a different time or stylist.`
-      );
-    }
-
-    // ── Coupon Validation ─────────────────────────────────────────────────────
+    // ── Coupon Validation (read-only; consumed atomically inside the tx) ─────
     let couponId = null;
     let couponDiscount = 0;
     if (dto.couponCode) {
@@ -90,13 +67,11 @@ const appointmentService = {
           } else {
             couponDiscount = Math.min(parseFloat(coupon.discountValue), parseFloat(service.price));
           }
-          // Increment usage count
-          await couponRepository.incrementUsage(couponId);
         }
       }
     }
 
-    // ── Loyalty Points Redemption ─────────────────────────────────────────────
+    // ── Loyalty Points Redemption (read-only) ─────────────────────────────────
     let pointsRedeemed = 0;
     let pointsDiscount = 0;
     if (dto.redeemPoints) {
@@ -112,30 +87,80 @@ const appointmentService = {
     const totalDiscount = couponDiscount + pointsDiscount;
     const discountAmount = parseFloat(Math.min(totalDiscount, parseFloat(service.price)).toFixed(2));
 
-    // Deduct redeemed points from user
-    if (pointsRedeemed > 0) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { loyaltyPoints: { decrement: pointsRedeemed } },
-      });
-    }
+    // ── Book under a per-date advisory lock ───────────────────────────────────
+    // Concurrent bookings for the same date serialize on this lock (works across
+    // instances too — it is held by Postgres until the transaction ends), so the
+    // conflict check below and the insert cannot race.
+    const lockKey = `salon:booking:${new Date(dto.appointmentDate).toISOString().slice(0, 10)}`;
 
-    const appointment = await appointmentRepository.create({
-      userId,
-      serviceId: dto.serviceId,
-      staffId,
-      couponId,
-      appointmentDate: new Date(dto.appointmentDate),
-      appointmentTime: dto.appointmentTime,
-      notes: dto.notes || null,
-      status: 'PENDING',
-      paymentStatus: 'UNPAID',
-      amountPaid: 0,
-      discountAmount,
-      pointsRedeemed,
-    });
+    const appointment = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
 
-    // Fire-and-forget confirmation email
+        // Auto-assign must run under the lock to see the latest bookings
+        let resolvedStaffId = staffId;
+        if (!resolvedStaffId) {
+          const staffList = await staffRepository.findByServiceId(dto.serviceId);
+          for (const candidate of staffList) {
+            const conflict = await appointmentRepository.checkSlotConflict(
+              dto.appointmentDate, dto.appointmentTime, null, candidate.id, service.duration, tx
+            );
+            if (!conflict) {
+              resolvedStaffId = candidate.id;
+              break;
+            }
+          }
+          // If no staff found (no stylists for service), fall back to no-staff booking
+        }
+
+        const conflict = await appointmentRepository.checkSlotConflict(
+          dto.appointmentDate, dto.appointmentTime, null, resolvedStaffId, service.duration, tx
+        );
+        if (conflict) {
+          throw ApiError.conflict(
+            `The time slot ${dto.appointmentTime} on ${dto.appointmentDate} is already booked for this stylist. Please choose a different time or stylist.`
+          );
+        }
+
+        if (couponId) {
+          const claimed = await couponRepository.incrementUsage(couponId, tx);
+          if (!claimed) {
+            throw ApiError.conflict('Coupon is no longer available (usage limit reached). Please remove it and try again.');
+          }
+        }
+
+        if (pointsRedeemed > 0) {
+          const updated = await tx.user.updateMany({
+            where: { id: userId, loyaltyPoints: { gte: pointsRedeemed } },
+            data: { loyaltyPoints: { decrement: pointsRedeemed } },
+          });
+          if (!updated || updated.count === 0) {
+            throw ApiError.conflict('You no longer have enough loyalty points for this redemption.');
+          }
+        }
+
+        return appointmentRepository.create(
+          {
+            userId,
+            serviceId: dto.serviceId,
+            staffId: resolvedStaffId,
+            couponId,
+            appointmentDate: new Date(dto.appointmentDate),
+            appointmentTime: dto.appointmentTime,
+            notes: dto.notes || null,
+            status: 'PENDING',
+            paymentStatus: 'UNPAID',
+            amountPaid: 0,
+            discountAmount,
+            pointsRedeemed,
+          },
+          tx
+        );
+      },
+      { timeout: 10000 }
+    );
+
+    // Fire-and-forget confirmation email (only after the booking is committed)
     sendAppointmentConfirmationEmail(appointment.user, appointment, appointment.service).catch(() => {});
 
     return appointment;
@@ -219,25 +244,41 @@ const appointmentService = {
       );
     }
 
-    // Check new slot availability (excluding this appointment, same staff)
-    const conflict = await appointmentRepository.checkSlotConflict(
-      dto.appointmentDate,
-      dto.appointmentTime,
-      id,
-      appointment.staffId
-    );
-    if (conflict) {
-      throw ApiError.conflict(
-        `The time slot ${dto.appointmentTime} on ${dto.appointmentDate} is already booked.`
-      );
-    }
+    // Check new slot availability (excluding this appointment, same staff),
+    // under the same per-date advisory lock used by createAppointment.
+    const lockKey = `salon:booking:${new Date(dto.appointmentDate).toISOString().slice(0, 10)}`;
 
-    return appointmentRepository.update(id, {
-      appointmentDate: new Date(dto.appointmentDate),
-      appointmentTime: dto.appointmentTime,
-      notes: dto.notes !== undefined ? dto.notes : appointment.notes,
-      status: 'PENDING', // Re-confirm after reschedule
-    });
+    return prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
+
+        const conflict = await appointmentRepository.checkSlotConflict(
+          dto.appointmentDate,
+          dto.appointmentTime,
+          id,
+          appointment.staffId,
+          service ? service.duration : 0,
+          tx
+        );
+        if (conflict) {
+          throw ApiError.conflict(
+            `The time slot ${dto.appointmentTime} on ${dto.appointmentDate} is already booked.`
+          );
+        }
+
+        return appointmentRepository.update(
+          id,
+          {
+            appointmentDate: new Date(dto.appointmentDate),
+            appointmentTime: dto.appointmentTime,
+            notes: dto.notes !== undefined ? dto.notes : appointment.notes,
+            status: 'PENDING', // Re-confirm after reschedule
+          },
+          tx
+        );
+      },
+      { timeout: 10000 }
+    );
   },
 
   async cancelAppointment(id, userId, role, ipAddress = null) {

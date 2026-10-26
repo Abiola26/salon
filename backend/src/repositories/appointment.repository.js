@@ -1,6 +1,7 @@
 'use strict';
 
 const { prisma } = require('../config/db');
+const { timeToMinutes } = require('../config/workingHours');
 
 const appointmentRepository = {
   findById: (id) =>
@@ -42,8 +43,8 @@ const appointmentRepository = {
 
   count: (where = {}) => prisma.appointment.count({ where }),
 
-  create: (data) =>
-    prisma.appointment.create({
+  create: (data, db = prisma) =>
+    db.appointment.create({
       data,
       include: {
         service: true,
@@ -52,8 +53,8 @@ const appointmentRepository = {
       },
     }),
 
-  update: (id, data) =>
-    prisma.appointment.update({
+  update: (id, data, db = prisma) =>
+    db.appointment.update({
       where: { id },
       data,
       include: {
@@ -66,20 +67,42 @@ const appointmentRepository = {
   delete: (id) => prisma.appointment.delete({ where: { id } }),
 
   /**
-   * Check if a slot is already taken (exclude CANCELLED slots and optionally an appointment id)
+   * Duration-aware overlap check: returns the first non-cancelled appointment on
+   * `appointmentDate` whose time range overlaps [appointmentTime, +durationMin),
+   * or null when the slot is free.
    * If staffId is provided, only conflicts for that stylist are checked.
    * If staffId is null, checks ALL appointments regardless of staff.
+   * Pass `db` (a transaction client) when called inside prisma.$transaction.
    */
-  checkSlotConflict: (appointmentDate, appointmentTime, excludeId = null, staffId = null) =>
-    prisma.appointment.findFirst({
+  checkSlotConflict: async (
+    appointmentDate,
+    appointmentTime,
+    excludeId = null,
+    staffId = null,
+    durationMin = 0,
+    db = prisma
+  ) => {
+    const rows = await db.appointment.findMany({
       where: {
         appointmentDate: new Date(appointmentDate),
-        appointmentTime,
         status: { not: 'CANCELLED' },
-        ...(staffId !== undefined && staffId !== null && { staffId }),
+        ...(staffId !== null && { staffId }),
         ...(excludeId && { id: { not: excludeId } }),
       },
-    }),
+      select: { appointmentTime: true, service: { select: { duration: true } } },
+    });
+    if (!rows || rows.length === 0) return null;
+
+    const newStart = timeToMinutes(appointmentTime);
+    const newEnd = newStart + Math.max(durationMin, 1);
+
+    for (const row of rows) {
+      const rowStart = timeToMinutes(row.appointmentTime);
+      const rowEnd = rowStart + Math.max(row.service?.duration || 0, 1);
+      if (newStart < rowEnd && rowStart < newEnd) return row;
+    }
+    return null;
+  },
 
   findUpcomingForUser: (userId) =>
     prisma.appointment.findMany({

@@ -170,6 +170,43 @@ describe('errorMiddleware', () => {
         })
       );
     });
+
+    it('redacts sensitive request fields (nested, arrays, depth cap) on server errors', () => {
+      const deep = { f: { password: 'deep-secret' } };
+      req.method = 'POST';
+      req.path = '/api/auth/login';
+      req.body = {
+        email: 'a@b.com',
+        password: 'hunter2',
+        profile: { refreshToken: 'r1', name: 'Al' },
+        tags: ['x', { apiKey: 'k' }],
+        nul: null,
+        a: { b: { c: { d: { e: deep } } } },
+      };
+      const err = new Error('Unexpected failure');
+      err.statusCode = 500;
+
+      errorHandler(err, req, res, next);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.objectContaining({
+            email: 'a@b.com',
+            password: '[REDACTED]',
+            profile: { refreshToken: '[REDACTED]', name: 'Al' },
+            tags: ['x', { apiKey: '[REDACTED]' }],
+            nul: null,
+          }),
+          params: {},
+          query: {},
+        })
+      );
+      // Beyond the depth cap redact returns the original value untouched
+      const logged = logger.error.mock.calls[0][1];
+      expect(logged.body.a.b.c.d.e).toBe(deep);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
   });
 
   describe('notFoundHandler', () => {

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { safeRedirect } from "@/lib/safeRedirect";
 import { Scissors, Loader2, AlertCircle } from "lucide-react";
 
 const registerSchema = z.object({
@@ -29,8 +30,7 @@ function RegisterForm() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      const redirectUrl = searchParams.get("redirect") || "/dashboard";
-      router.push(redirectUrl);
+      router.push(safeRedirect(searchParams.get("redirect"), "/dashboard"));
     }
   }, [user, router, searchParams]);
 
@@ -64,9 +64,8 @@ function RegisterForm() {
       // Save credentials in Zustand
       setAuth(registeredUser, accessToken, refreshToken);
 
-      // Redirect user
-      const redirectUrl = searchParams.get("redirect") || "/dashboard";
-      router.push(redirectUrl);
+      // Redirect user (validated same-site path only)
+      router.push(safeRedirect(searchParams.get("redirect"), "/dashboard"));
     } catch (err) {
       setError(
         getApiErrorMessage(
