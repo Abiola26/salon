@@ -5,6 +5,7 @@ const couponRepository = require('../../src/repositories/coupon.repository');
 const paymentRepository = require('../../src/repositories/payment.repository');
 const serviceRepository = require('../../src/repositories/service.repository');
 const staffRepository = require('../../src/repositories/staff.repository');
+const staffLeaveRepository = require('../../src/repositories/staffLeave.repository');
 const reviewRepository = require('../../src/repositories/review.repository');
 const appointmentRepository = require('../../src/repositories/appointment.repository');
 const { prisma } = require('../../src/config/db');
@@ -72,6 +73,12 @@ jest.mock('../../src/config/db', () => ({
       update: jest.fn(),
       delete: jest.fn(),
       findFirst: jest.fn(),
+    },
+    staffLeave: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      delete: jest.fn(),
     },
   },
 }));
@@ -219,6 +226,51 @@ describe('Repositories', () => {
       expect(prisma.staff.findFirst).toHaveBeenCalled();
       expect(prisma.staff.create).toHaveBeenCalled();
       expect(prisma.staff.update).toHaveBeenCalledTimes(2); // update + softDelete
+    });
+  });
+
+  describe('staffLeaveRepository', () => {
+    it('calls findOverlapping, countAppointmentsIn, findStaffIdsOnLeave, create, finders, delete', async () => {
+      prisma.staffLeave.findMany
+        .mockResolvedValueOnce([{ id: 'lv1' }])
+        .mockResolvedValueOnce([{ staffId: 'st1' }])
+        .mockResolvedValueOnce([{ id: 'lv1' }])
+        .mockResolvedValueOnce([{ id: 'lv1' }]);
+      prisma.staffLeave.findUnique.mockResolvedValue({ id: 'lv1' });
+      prisma.staffLeave.create.mockResolvedValue({ id: 'lv1' });
+
+      await staffLeaveRepository.findOverlapping('st1', new Date('2026-08-10'), new Date('2026-08-12'));
+      expect(prisma.staffLeave.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: { staffId: 'st1', startDate: { lte: expect.anything() }, endDate: { gte: expect.anything() } },
+        })
+      );
+
+      await staffLeaveRepository.countAppointmentsIn('st1', '2026-08-10', '2026-08-12');
+      expect(prisma.appointment.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ staffId: 'st1', status: { not: 'CANCELLED' } }),
+        })
+      );
+
+      const onLeave = await staffLeaveRepository.findStaffIdsOnLeave('2026-08-11');
+      expect(onLeave).toEqual(['st1']);
+
+      await staffLeaveRepository.create({ staffId: 'st1' });
+      expect(prisma.staffLeave.create).toHaveBeenCalled();
+
+      await staffLeaveRepository.findByStaffId('st1');
+      expect(prisma.staffLeave.findMany).toHaveBeenCalledTimes(3);
+
+      await staffLeaveRepository.findAllUpcoming();
+      expect(prisma.staffLeave.findMany).toHaveBeenCalledTimes(4);
+
+      await staffLeaveRepository.findById('lv1');
+      expect(prisma.staffLeave.findUnique).toHaveBeenCalledWith({ where: { id: 'lv1' } });
+
+      await staffLeaveRepository.delete('lv1');
+      expect(prisma.staffLeave.delete).toHaveBeenCalledWith({ where: { id: 'lv1' } });
     });
   });
 

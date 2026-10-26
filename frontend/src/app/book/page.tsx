@@ -585,8 +585,8 @@ function BookingWizardContent() {
                   })}
                   {slots.length === 0 && (
                     <div className="col-span-full py-8 text-center text-zinc-500 text-sm">
-                      No availability found for this date. Please try another
-                      day.
+                      {slotsResponse?.data?.reason ||
+                        "No availability found for this date. Please try another day."}
                     </div>
                   )}
                 </div>

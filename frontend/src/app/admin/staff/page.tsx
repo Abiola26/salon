@@ -17,11 +17,19 @@ import {
   X,
   User,
   Scissors,
+  CalendarOff,
 } from "lucide-react";
 
 interface Service {
   id: string;
   name: string;
+}
+
+interface StaffLeave {
+  id: string;
+  startDate: string;
+  endDate: string;
+  reason: string | null;
 }
 
 interface Staff {
@@ -50,6 +58,12 @@ const emptyForm: StaffFormData = {
   serviceIds: [],
 };
 
+const emptyLeaveForm = { startDate: "", endDate: "", reason: "" };
+
+// Column DATE values serialize as "...T00:00:00.000Z" — slice keeps the
+// stored calendar date (never toLocaleDateString, which can shift a day).
+const isoDate = (value: string) => value.slice(0, 10);
+
 export default function AdminStaffPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -60,6 +74,10 @@ export default function AdminStaffPage() {
   const [form, setForm] = useState<StaffFormData>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [leaveStaff, setLeaveStaff] = useState<Staff | null>(null);
+  const [leaveForm, setLeaveForm] = useState(emptyLeaveForm);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isHydrated && (!user || user.role !== "ADMIN")) {
@@ -125,6 +143,67 @@ export default function AdminStaffPage() {
       console.error(getApiErrorMessage(err, "Failed to delete staff member"));
     },
   });
+
+  // ── Leave (time off) ────────────────────────────────────────────────────────
+  const { data: leaveResponse, isLoading: leaveLoading } = useQuery({
+    queryKey: ["staff-leave", leaveStaff?.id],
+    queryFn: async () => {
+      const res = await api.get(`/staff/${leaveStaff?.id}/leave`);
+      return res.data;
+    },
+    enabled: !!leaveStaff,
+  });
+  const leaveList: StaffLeave[] = leaveResponse?.data || [];
+
+  const createLeaveMutation = useMutation({
+    mutationFn: (data: { startDate: string; endDate: string; reason?: string }) =>
+      api.post(`/staff/${leaveStaff?.id}/leave`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-leave", leaveStaff?.id] });
+      queryClient.invalidateQueries({ queryKey: ["slots"] });
+      setLeaveForm(emptyLeaveForm);
+      setLeaveError(null);
+    },
+    onError: (err: unknown) => {
+      setLeaveError(getApiErrorMessage(err, "Failed to add time off"));
+    },
+  });
+
+  const deleteLeaveMutation = useMutation({
+    mutationFn: (leaveId: string) => api.delete(`/staff/leave/${leaveId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-leave", leaveStaff?.id] });
+      queryClient.invalidateQueries({ queryKey: ["slots"] });
+    },
+    onError: (err: unknown) => {
+      setLeaveError(getApiErrorMessage(err, "Failed to remove time off"));
+    },
+  });
+
+  const openLeave = (staff: Staff) => {
+    setLeaveStaff(staff);
+    setLeaveForm(emptyLeaveForm);
+    setLeaveError(null);
+  };
+
+  const closeLeave = () => {
+    setLeaveStaff(null);
+    setLeaveForm(emptyLeaveForm);
+    setLeaveError(null);
+  };
+
+  const handleLeaveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leaveForm.startDate || !leaveForm.endDate) {
+      setLeaveError("Start and end dates are required");
+      return;
+    }
+    createLeaveMutation.mutate({
+      startDate: leaveForm.startDate,
+      endDate: leaveForm.endDate,
+      ...(leaveForm.reason.trim() && { reason: leaveForm.reason.trim() }),
+    });
+  };
 
   const openCreate = () => {
     setEditingStaff(null);
@@ -296,6 +375,13 @@ export default function AdminStaffPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openLeave(s)}
+                            aria-label={`Time off for ${s.name}`}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 transition cursor-pointer"
+                          >
+                            <CalendarOff className="h-4 w-4" />
+                          </button>
                           <button
                             onClick={() => openEdit(s)}
                             className="p-1.5 rounded-lg text-zinc-400 hover:text-primary hover:bg-zinc-800 transition cursor-pointer"
@@ -489,6 +575,131 @@ export default function AdminStaffPage() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Time Off Modal */}
+      {leaveStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-modal-title"
+            className="glass-panel w-full max-w-lg rounded-2xl border border-zinc-700 p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="leave-modal-title" className="text-lg font-extrabold text-white flex items-center gap-2">
+                <CalendarOff className="h-5 w-5 text-amber-400" />
+                Time Off — {leaveStaff.name}
+              </h2>
+              <button
+                onClick={closeLeave}
+                aria-label="Close time off dialog"
+                className="text-zinc-400 hover:text-white transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {leaveError && (
+              <div role="alert" className="bg-red-950/40 border border-red-900/40 text-red-300 p-3 rounded-lg flex items-start gap-2 text-xs">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{leaveError}</span>
+              </div>
+            )}
+
+            {/* Existing periods */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-zinc-400">Scheduled time off</p>
+              {leaveLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="animate-spin h-5 w-5 text-primary" />
+                </div>
+              ) : leaveList.length === 0 ? (
+                <p className="text-zinc-600 text-sm">No time off scheduled.</p>
+              ) : (
+                leaveList.map((l) => (
+                  <div
+                    key={l.id}
+                    className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800 rounded-xl px-4 py-2.5"
+                  >
+                    <div>
+                      <p className="text-sm text-white font-semibold">
+                        {isoDate(l.startDate)}
+                        {l.endDate !== l.startDate && ` → ${isoDate(l.endDate)}`}
+                      </p>
+                      {l.reason && <p className="text-zinc-500 text-xs">{l.reason}</p>}
+                    </div>
+                    <button
+                      onClick={() => deleteLeaveMutation.mutate(l.id)}
+                      aria-label={`Remove time off ${isoDate(l.startDate)}`}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-950/30 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Add period */}
+            <form onSubmit={handleLeaveSubmit} className="space-y-3 border-t border-zinc-800 pt-4">
+              <p className="text-xs font-semibold text-zinc-400">Add a period</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="leave-start" className="block text-xs font-semibold text-zinc-400 mb-1">
+                    Start Date *
+                  </label>
+                  <input
+                    id="leave-start"
+                    required
+                    type="date"
+                    value={leaveForm.startDate}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, startDate: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-zinc-800 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="leave-end" className="block text-xs font-semibold text-zinc-400 mb-1">
+                    End Date *
+                  </label>
+                  <input
+                    id="leave-end"
+                    required
+                    type="date"
+                    value={leaveForm.endDate}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, endDate: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-zinc-800 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary [color-scheme:dark]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="leave-reason" className="block text-xs font-semibold text-zinc-400 mb-1">
+                  Reason
+                </label>
+                <input
+                  id="leave-reason"
+                  type="text"
+                  maxLength={200}
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                  placeholder="Vacation, training, appointment..."
+                  className="w-full px-3 py-2.5 border border-zinc-800 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={createLeaveMutation.isPending}
+                className="w-full bg-primary hover:bg-primary-hover text-black py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {createLeaveMutation.isPending ? (
+                  <Loader2 className="animate-spin h-4 w-4" />
+                ) : (
+                  "Add Time Off"
+                )}
+              </button>
+            </form>
           </div>
         </div>
       )}

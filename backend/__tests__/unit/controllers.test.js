@@ -412,3 +412,82 @@ describe('userController', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+// ─── Staff Leave Controller ────────────────────────────────────────────────────
+
+jest.mock('../../src/services/staffLeave.service');
+const staffLeaveService = require('../../src/services/staffLeave.service');
+const staffLeaveController = require('../../src/controllers/staffLeave.controller');
+
+describe('staffLeaveController', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('getAllUpcomingLeave — returns leave list with 200', async () => {
+    const rows = [{ id: 'lv1' }];
+    staffLeaveService.getAllUpcomingLeave.mockResolvedValue(rows);
+    const res = mockRes();
+
+    await callController(staffLeaveController.getAllUpcomingLeave, { }, res, mockNext());
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(staffLeaveService.getAllUpcomingLeave).toHaveBeenCalled();
+  });
+
+  it('getLeaveForStaff — passes the staff id from params', async () => {
+    staffLeaveService.getLeaveForStaff.mockResolvedValue([{ id: 'lv1' }]);
+    const res = mockRes();
+
+    await callController(staffLeaveController.getLeaveForStaff, { params: { id: 'st1' } }, res, mockNext());
+
+    expect(staffLeaveService.getLeaveForStaff).toHaveBeenCalledWith('st1');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('createLeave — forwards dto, actor and ip; returns 201', async () => {
+    const leave = { id: 'lv1' };
+    staffLeaveService.createLeave.mockResolvedValue(leave);
+    const res = mockRes();
+    const req = {
+      params: { id: 'st1' },
+      body: { startDate: '2026-08-10', endDate: '2026-08-11' },
+      user: { id: 'admin-1' },
+      ip: '::1',
+    };
+
+    await callController(staffLeaveController.createLeave, req, res, mockNext());
+
+    expect(staffLeaveService.createLeave).toHaveBeenCalledWith('st1', req.body, 'admin-1', '::1');
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it('deleteLeave — passes the leave id from params', async () => {
+    staffLeaveService.deleteLeave.mockResolvedValue(undefined);
+    const res = mockRes();
+
+    await callController(
+      staffLeaveController.deleteLeave,
+      { params: { leaveId: 'lv1' }, user: { id: 'admin-1' }, ip: '::1' },
+      res,
+      mockNext()
+    );
+
+    expect(staffLeaveService.deleteLeave).toHaveBeenCalledWith('lv1', 'admin-1', '::1');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('createLeave — propagates service errors to next', async () => {
+    const err = new Error('overlaps');
+    staffLeaveService.createLeave.mockRejectedValue(err);
+    const res = mockRes();
+    const next = mockNext();
+
+    await callController(
+      staffLeaveController.createLeave,
+      { params: { id: 'st1' }, body: {}, user: {}, ip: '::1' },
+      res,
+      next
+    );
+
+    expect(next).toHaveBeenCalledWith(err);
+  });
+});
