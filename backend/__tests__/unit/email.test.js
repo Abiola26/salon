@@ -35,6 +35,16 @@ describe('emailUtils', () => {
       expect(enqueueEmail).toHaveBeenCalledWith({ to: 't@t.com', subject: 'sub', html: 'plain' });
     });
 
+    it('passes the ICS payload through to the queue', async () => {
+      await sendEmail({ to: 't@t.com', subject: 'sub', html: '<p>h</p>', ics: 'BEGIN:VCALENDAR' });
+      expect(enqueueEmail).toHaveBeenCalledWith({
+        to: 't@t.com',
+        subject: 'sub',
+        html: '<p>h</p>',
+        ics: 'BEGIN:VCALENDAR',
+      });
+    });
+
     it('does not throw when enqueue fails (returns null)', async () => {
       enqueueEmail.mockResolvedValue(null);
 
@@ -46,7 +56,7 @@ describe('emailUtils', () => {
 
   describe('templates', () => {
     const user = { name: 'Alice', email: 'alice@example.com' };
-    const appointment = { appointmentDate: '2026-06-25', appointmentTime: '10:00' };
+    const appointment = { id: 'a1', appointmentDate: '2026-06-25', appointmentTime: '10:00' };
     const service = { name: 'Cut', price: '50.00', duration: 30 };
     const payment = { amount: 50.00, paymentType: 'FULL', stripePaymentIntentId: 'pi_123' };
 
@@ -67,14 +77,22 @@ describe('emailUtils', () => {
     it('sendAppointmentConfirmationEmail', async () => {
       await sendAppointmentConfirmationEmail(user, appointment, service);
       expect(enqueueEmail).toHaveBeenCalledWith(
-        expect.objectContaining({ to: user.email, subject: expect.stringContaining('Confirmed') })
+        expect.objectContaining({
+          to: user.email,
+          subject: expect.stringContaining('Confirmed'),
+          ics: expect.stringContaining('UID:appointment-a1@salon-bookings'),
+        })
       );
     });
 
     it('sendAppointmentReminderEmail', async () => {
       await sendAppointmentReminderEmail(user, appointment, service);
       expect(enqueueEmail).toHaveBeenCalledWith(
-        expect.objectContaining({ to: user.email, subject: expect.stringContaining('Reminder') })
+        expect.objectContaining({
+          to: user.email,
+          subject: expect.stringContaining('Reminder'),
+          ics: expect.stringContaining('BEGIN:VEVENT'),
+        })
       );
     });
 

@@ -100,7 +100,13 @@ export async function proxy(req: NextRequest) {
 
   // /login, /register — a signed-in user doesn't need them
   if (hasSession) {
-    return NextResponse.redirect(new URL("/", req.url));
+    const fallback = claims?.role === "ADMIN" ? "/admin" : "/dashboard";
+    const rawRedirect = req.nextUrl.searchParams.get("redirect");
+    const target =
+      rawRedirect && rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") && !rawRedirect.startsWith("/\\")
+        ? rawRedirect
+        : fallback;
+    return NextResponse.redirect(new URL(target, req.url));
   }
 
   return NextResponse.next();

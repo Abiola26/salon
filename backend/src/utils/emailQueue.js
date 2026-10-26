@@ -46,6 +46,15 @@ const runProcessor = async (limit) => {
         to: email.to,
         subject: email.subject,
         html: email.html,
+        ...(email.ics && {
+          attachments: [
+            {
+              filename: 'appointment.ics',
+              content: email.ics,
+              contentType: 'text/calendar; charset=utf-8',
+            },
+          ],
+        }),
       });
       await prisma.emailQueue.update({
         where: { id: email.id },
@@ -103,12 +112,20 @@ const processEmailQueue = async (limit = BATCH_SIZE) => {
  * @param {string} opts.to      - Recipient email address
  * @param {string} opts.subject - Email subject line
  * @param {string} opts.html    - HTML body
+ * @param {string} [opts.ics]   - Optional RFC 5545 calendar payload (attached as text/calendar)
  * @returns {Promise<object|null>} created row, or null on enqueue failure
  */
-const enqueueEmail = async ({ to, subject, html }) => {
+const enqueueEmail = async ({ to, subject, html, ics }) => {
   try {
     const row = await prisma.emailQueue.create({
-      data: { to, subject, html, status: 'PENDING', attempts: 0 },
+      data: {
+        to,
+        subject,
+        html,
+        status: 'PENDING',
+        attempts: 0,
+        ...(ics && { ics }),
+      },
     });
     logger.debug(`📬 Email enqueued → ${to} | ${subject}`);
     processEmailQueue().catch((err) =>
