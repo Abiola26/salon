@@ -83,12 +83,13 @@ model User {
   password             String
   phone                String?
   role                 Role          @default(CUSTOMER)
-  // DEPRECATED (Phase 2): sessions now live in refresh_tokens table; kept to
-  // avoid a risky DROP COLUMN on drifted databases — remove in a cleanup phase.
-  refreshToken         String?
   resetPasswordToken   String?
   resetPasswordExpiry  DateTime?
   loyaltyPoints        Int           @default(0)
+  // Soft delete (Phase 3): deletion anonymizes PII (name/email/phone/password)
+  // instead of hard-deleting — appointments, payments, reviews and audit logs
+  // all reference the user, and a hard delete would CASCADE them away.
+  deletedAt            DateTime?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
@@ -128,6 +129,7 @@ model Staff {
   bio          String?       @db.Text
   image        String?
   isActive     Boolean       @default(true)
+  deletedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -145,6 +147,7 @@ model Service {
   price       Decimal       @db.Decimal(10, 2)
   image       String?
   isActive    Boolean       @default(true)
+  deletedAt   DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -157,7 +160,7 @@ model Service {
 
 model Coupon {
   id            String        @id @default(uuid())
-  code          String        @unique
+  code          String      @unique
   discountType  CouponType
   discountValue Decimal       @db.Decimal(10, 2)
   isActive      Boolean       @default(true)
@@ -165,6 +168,10 @@ model Coupon {
   endDate       DateTime?
   maxUsage      Int?
   usageCount    Int           @default(0)
+  // Soft delete (Phase 3): on delete the code is suffixed
+  // ("<CODE> (deleted <id6)>") so the unique constraint frees the original
+  // code for reuse while appointment history keeps a recognizable value.
+  deletedAt     DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -206,7 +213,8 @@ model Appointment {
   @@index([userId])
   @@index([serviceId])
   @@index([staffId])
-  @@index([appointmentDate])
+  // Availability + conflict-check hot path (date range scans with staff/status).
+  @@index([appointmentDate, staffId, status])
   @@map("appointments")
 }
 
@@ -257,7 +265,8 @@ model EmailQueue {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  @@index([status])
+  // Queue processor: WHERE status = PENDING ORDER BY createdAt (composite).
+  @@index([status, createdAt])
   @@map("email_queue")
 }
 

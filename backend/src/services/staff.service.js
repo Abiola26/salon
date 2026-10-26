@@ -72,7 +72,9 @@ const staffService = {
     const existing = await staffRepository.findById(id);
     if (!existing) throw ApiError.notFound('Staff member not found');
 
-    await staffRepository.delete(id);
+    // Soft delete: appointment history keeps staffId (hard delete would SET NULL
+    // via the FK and silently lose who did the work).
+    await staffRepository.softDelete(id);
 
     await auditLog({
       userId: actorId,

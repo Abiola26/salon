@@ -47,6 +47,23 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.string().default(String(15 * 60 * 1000)),
   RATE_LIMIT_MAX: z.string().default('100'),
   AUTH_RATE_LIMIT_MAX: z.string().default('10'),
+
+  // IANA timezone the crons (reminders, completion marker, email queue) run in.
+  // Render servers are UTC — without this, "9:00" means 09:00 UTC, not salon time.
+  SALON_TIMEZONE: z
+    .string()
+    .default('America/New_York')
+    .refine(
+      (v) => {
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: v });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'SALON_TIMEZONE must be a valid IANA timezone (e.g. America/New_York)' }
+    ),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -102,4 +119,6 @@ module.exports = {
     MAX: Number(env.RATE_LIMIT_MAX),
     AUTH_MAX: Number(env.AUTH_RATE_LIMIT_MAX),
   },
+
+  SALON_TIMEZONE: env.SALON_TIMEZONE,
 };

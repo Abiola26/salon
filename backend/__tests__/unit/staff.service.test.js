@@ -104,14 +104,14 @@ describe('staffService', () => {
       await expect(staffService.deleteStaff('st1')).rejects.toThrow('Staff member not found');
     });
 
-    it('deletes staff member and logs audit', async () => {
+    it('soft-deletes staff member and logs audit', async () => {
       staffRepository.findById.mockResolvedValue({ id: 'st1', name: 'John' });
-      staffRepository.delete.mockResolvedValue({});
+      staffRepository.softDelete.mockResolvedValue({});
       auditLog.mockResolvedValue({});
 
       await staffService.deleteStaff('st1', 'admin-1', '127.0.0.1');
 
-      expect(staffRepository.delete).toHaveBeenCalledWith('st1');
+      expect(staffRepository.softDelete).toHaveBeenCalledWith('st1');
       expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE_STAFF' }));
     });
   });

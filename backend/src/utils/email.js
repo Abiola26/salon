@@ -1,27 +1,20 @@
 'use strict';
 
-const transporter = require('../config/email');
-const { EMAIL, CLIENT_URL } = require('../config/env');
+const { enqueueEmail } = require('./emailQueue');
+const { CLIENT_URL } = require('../config/env');
 const logger = require('../config/logger');
 
 /**
- * Send a generic email
+ * Queue a generic email for delivery via the email_queue pipeline
+ * (immediate nudge attempt + cron retries). Never throws — the queue logs
+ * enqueue failures and business operations proceed without mail.
  */
 const sendEmail = async ({ to, subject, html, text }) => {
-  try {
-    const info = await transporter.sendMail({
-      from: EMAIL.FROM,
-      to,
-      subject,
-      html,
-      text,
-    });
-    logger.info(`Email sent to ${to} — MessageId: ${info.messageId}`);
-    return info;
-  } catch (error) {
-    logger.error(`Failed to send email to ${to}: ${error.message}`);
-    throw error;
+  const row = await enqueueEmail({ to, subject, html: html || text });
+  if (row) {
+    logger.info(`Email queued → ${to} | ${subject}`);
   }
+  return row;
 };
 
 // ─── Templates ────────────────────────────────────────────────────────────────
