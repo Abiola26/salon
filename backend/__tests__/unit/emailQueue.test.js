@@ -58,6 +58,24 @@ describe('emailQueue', () => {
       ).resolves.toBeNull();
     });
 
+    it('stores the ICS payload on the row when provided', async () => {
+      prisma.emailQueue.create.mockResolvedValue(row({ ics: 'BEGIN:VCALENDAR' }));
+      prisma.emailQueue.findMany.mockResolvedValue([]);
+
+      await enqueueEmail({ to: 'a@b.com', subject: 'sub', html: '<p>h</p>', ics: 'BEGIN:VCALENDAR' });
+
+      expect(prisma.emailQueue.create).toHaveBeenCalledWith({
+        data: {
+          to: 'a@b.com',
+          subject: 'sub',
+          html: '<p>h</p>',
+          status: 'PENDING',
+          attempts: 0,
+          ics: 'BEGIN:VCALENDAR',
+        },
+      });
+    });
+
     it('still resolves when the background nudge fails (logged, not thrown)', async () => {
       prisma.emailQueue.create.mockResolvedValue(row());
       prisma.emailQueue.findMany.mockRejectedValue(new Error('db down'));
@@ -88,6 +106,42 @@ describe('emailQueue', () => {
         where: { id: 'q1' },
         data: { status: 'SENT' },
       });
+    });
+
+    it('attaches the ICS payload as text/calendar when the row has one', async () => {
+      const ics = 'BEGIN:VCALENDAR\r\nEND:VCALENDAR';
+      prisma.emailQueue.findMany.mockResolvedValue([row({ ics })]);
+      prisma.emailQueue.updateMany.mockResolvedValue({ count: 1 });
+      prisma.emailQueue.update.mockResolvedValue({});
+      transporter.sendMail.mockResolvedValue({ messageId: 'm1' });
+
+      const sent = await processEmailQueue();
+
+      expect(sent).toBe(1);
+      expect(transporter.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachments: [
+            {
+              filename: 'appointment.ics',
+              content: ics,
+              contentType: 'text/calendar; charset=utf-8',
+            },
+          ],
+        })
+      );
+    });
+
+    it('sends without attachments when the row has no ICS', async () => {
+      prisma.emailQueue.findMany.mockResolvedValue([row()]);
+      prisma.emailQueue.updateMany.mockResolvedValue({ count: 1 });
+      prisma.emailQueue.update.mockResolvedValue({});
+      transporter.sendMail.mockResolvedValue({ messageId: 'm1' });
+
+      await processEmailQueue();
+
+      expect(transporter.sendMail).toHaveBeenCalledWith(
+        expect.not.objectContaining({ attachments: expect.anything() })
+      );
     });
 
     it('returns rows to PENDING for retry when an attempt below the max fails', async () => {

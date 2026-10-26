@@ -280,6 +280,9 @@ model EmailQueue {
   to        String
   subject   String
   html      String
+  // Optional RFC 5545 calendar payload — sent as a text/calendar attachment
+  // so booking emails can be added to the customer's calendar.
+  ics       String?
   status    EmailStatus @default(PENDING)
   attempts  Int         @default(0)
   lastError String?

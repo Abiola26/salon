@@ -1,6 +1,7 @@
 'use strict';
 
 const { enqueueEmail } = require('./emailQueue');
+const { buildAppointmentIcs } = require('./ics');
 const { CLIENT_URL } = require('../config/env');
 const logger = require('../config/logger');
 
@@ -8,9 +9,15 @@ const logger = require('../config/logger');
  * Queue a generic email for delivery via the email_queue pipeline
  * (immediate nudge attempt + cron retries). Never throws — the queue logs
  * enqueue failures and business operations proceed without mail.
+ * `ics` (optional RFC 5545 payload) is attached as text/calendar.
  */
-const sendEmail = async ({ to, subject, html, text }) => {
-  const row = await enqueueEmail({ to, subject, html: html || text });
+const sendEmail = async ({ to, subject, html, text, ics }) => {
+  const row = await enqueueEmail({
+    to,
+    subject,
+    html: html || text,
+    ...(ics && { ics }),
+  });
   if (row) {
     logger.info(`Email queued → ${to} | ${subject}`);
   }
@@ -69,6 +76,7 @@ const sendAppointmentConfirmationEmail = async (user, appointment, service) => {
   await sendEmail({
     to: user.email,
     subject: '📅 Appointment Confirmed!',
+    ics: buildAppointmentIcs(appointment, service),
     html: `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#6d28d9">Appointment Confirmed ✅</h2>
@@ -93,6 +101,7 @@ const sendAppointmentReminderEmail = async (user, appointment, service) => {
   await sendEmail({
     to: user.email,
     subject: '⏰ Appointment Reminder — Tomorrow!',
+    ics: buildAppointmentIcs(appointment, service),
     html: `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
         <h2 style="color:#6d28d9">Reminder: Appointment Tomorrow ⏰</h2>
