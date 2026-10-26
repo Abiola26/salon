@@ -1,7 +1,6 @@
 'use strict';
 
 const serviceRepository = require('../repositories/service.repository');
-const appointmentRepository = require('../repositories/appointment.repository');
 const { auditLog } = require('../utils/audit');
 const ApiError = require('../utils/ApiError');
 
@@ -65,16 +64,9 @@ const serviceService = {
   async deleteService(id, actorId = null, ipAddress = null) {
     const service = await serviceService.getServiceById(id);
 
-    // Guard: reject if there are any linked appointments (RESTRICT FK)
-    const linkedCount = await appointmentRepository.count({ serviceId: id });
-    if (linkedCount > 0) {
-      throw ApiError.conflict(
-        `Cannot delete service "${service.name}" — it has ${linkedCount} linked appointment(s). ` +
-        'Deactivate the service instead.'
-      );
-    }
-
-    await serviceRepository.delete(id);
+    // Soft delete (Phase 3): the row stays so appointment/review history keeps
+    // its FK, but it disappears from every catalog/list/booking lookup.
+    await serviceRepository.softDelete(id);
 
     await auditLog({
       userId: actorId,

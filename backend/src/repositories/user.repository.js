@@ -4,25 +4,26 @@ const { prisma } = require('../config/db');
 
 const userRepository = {
   findById: (id) =>
-    prisma.user.findUnique({
-      where: { id },
+    prisma.user.findFirst({
+      where: { id, deletedAt: null },
       select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, createdAt: true, updatedAt: true },
     }),
 
-  findByIdFull: (id) => prisma.user.findUnique({ where: { id } }),
+  findByIdFull: (id) => prisma.user.findFirst({ where: { id, deletedAt: null } }),
 
-  findByEmail: (email) => prisma.user.findUnique({ where: { email } }),
+  findByEmail: (email) =>
+    prisma.user.findFirst({ where: { email, deletedAt: null } }),
 
   findAll: ({ skip = 0, take = 20, role } = {}) =>
     prisma.user.findMany({
-      where: role ? { role } : undefined,
+      where: { deletedAt: null, ...(role && { role }) },
       select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       skip,
       take,
     }),
 
-  count: (where = {}) => prisma.user.count({ where }),
+  count: (where = {}) => prisma.user.count({ where: { ...where, deletedAt: null } }),
 
   create: (data) =>
     prisma.user.create({
@@ -40,13 +41,19 @@ const userRepository = {
   updateByEmail: (email, data) =>
     prisma.user.update({ where: { email }, data }),
 
-  delete: (id) => prisma.user.delete({ where: { id } }),
+  softDelete: (id, data = {}) =>
+    prisma.user.update({
+      where: { id },
+      data: { deletedAt: new Date(), ...data },
+      select: { id: true },
+    }),
 
   findByResetToken: (hashedToken) =>
     prisma.user.findFirst({
       where: {
         resetPasswordToken: hashedToken,
         resetPasswordExpiry: { gt: new Date() },
+        deletedAt: null,
       },
     }),
 };

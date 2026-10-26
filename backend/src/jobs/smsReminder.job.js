@@ -12,14 +12,15 @@
 const cron = require('node-cron');
 const { prisma } = require('../config/db');
 const { sendSms } = require('../utils/sms');
+const { SALON_TIMEZONE } = require('../config/env');
 const logger = require('../config/logger');
 
 const REMINDER_HOURS_BEFORE = 2; // Remind 2 hours before appointment
 const TOLERANCE_MINUTES = 5;     // ±5 minute tolerance window
 
-const getNewYorkTimeParts = (date) => {
+const getSalonTimeParts = (date) => {
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+    timeZone: SALON_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -54,13 +55,13 @@ async function runSmsReminderJob() {
   const windowEnd = new Date(targetTime.getTime() + TOLERANCE_MINUTES * 60 * 1000);
 
   // Normalize to just the local date for the DB date field in NY timezone
-  const { dateStr: targetDate } = getNewYorkTimeParts(targetTime);
+  const { dateStr: targetDate } = getSalonTimeParts(targetTime);
 
   // Build the list of HH:mm times in the window in NY timezone
   const windowTimes = [];
   const cursor = new Date(windowStart);
   while (cursor <= windowEnd) {
-    const { timeStr } = getNewYorkTimeParts(cursor);
+    const { timeStr } = getSalonTimeParts(cursor);
     windowTimes.push(timeStr);
     cursor.setMinutes(cursor.getMinutes() + 1);
   }
@@ -111,10 +112,10 @@ function initSmsReminderJob() {
   // Run every 30 minutes: '*/30 * * * *'
   cron.schedule('*/30 * * * *', runSmsReminderJob, {
     scheduled: true,
-    timezone: 'America/New_York', // Adjust to your salon's timezone
+    timezone: SALON_TIMEZONE, // salon-local window math below assumes this tz
   });
 
-  logger.info('⏰ [SMS Reminder Job] Scheduled — runs every 30 minutes');
+  logger.info(`⏰ [SMS Reminder Job] Scheduled — runs every 30 minutes (${SALON_TIMEZONE})`);
 }
 
 module.exports = { initSmsReminderJob, runSmsReminderJob };

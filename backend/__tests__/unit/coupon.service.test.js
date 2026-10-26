@@ -188,13 +188,15 @@ describe('couponService', () => {
       await expect(couponService.deleteCoupon('x')).rejects.toThrow('Coupon not found');
     });
 
-    it('deletes successfully and audits', async () => {
+    it('soft-deletes with a code-mangling suffix (frees the original code) and audits', async () => {
       const existing = { id: 'c1', code: 'DEL' };
       couponRepository.findById.mockResolvedValue(existing);
-      couponRepository.delete.mockResolvedValue();
+      couponRepository.softDelete.mockResolvedValue();
       auditLog.mockResolvedValue();
       await couponService.deleteCoupon('c1', 'admin', '::1');
-      expect(couponRepository.delete).toHaveBeenCalledWith('c1');
+      expect(couponRepository.softDelete).toHaveBeenCalledWith('c1', {
+        code: 'DEL (deleted c1)',
+      });
       expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE_COUPON' }));
     });
   });

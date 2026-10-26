@@ -3,9 +3,11 @@
 const bcrypt = require('bcryptjs');
 const userService = require('../../src/services/user.service');
 const userRepository = require('../../src/repositories/user.repository');
+const refreshTokenRepository = require('../../src/repositories/refreshToken.repository');
 const ApiError = require('../../src/utils/ApiError');
 
 jest.mock('../../src/repositories/user.repository');
+jest.mock('../../src/repositories/refreshToken.repository');
 jest.mock('bcryptjs');
 
 describe('userService', () => {
@@ -64,7 +66,7 @@ describe('userService', () => {
       ).rejects.toThrow('Current password is incorrect');
     });
 
-    it('hashes new password and resets refresh token on success', async () => {
+    it('hashes new password on success', async () => {
       userRepository.findByIdFull.mockResolvedValue({ id: '1', password: 'hashedOld' });
       bcrypt.compare.mockResolvedValue(true);
       bcrypt.hash.mockResolvedValue('hashedNew');
@@ -75,7 +77,6 @@ describe('userService', () => {
       expect(bcrypt.hash).toHaveBeenCalledWith('new', 12);
       expect(userRepository.update).toHaveBeenCalledWith('1', {
         password: 'hashedNew',
-        refreshToken: null,
       });
     });
   });
@@ -87,13 +88,23 @@ describe('userService', () => {
       await expect(userService.deleteAccount('1')).rejects.toThrow('User not found');
     });
 
-    it('deletes user when found', async () => {
+    it('anonymizes and soft-deletes user, then revokes sessions', async () => {
       userRepository.findById.mockResolvedValue({ id: '1' });
-      userRepository.delete.mockResolvedValue();
+      userRepository.softDelete.mockResolvedValue();
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue();
 
       await userService.deleteAccount('1');
 
-      expect(userRepository.delete).toHaveBeenCalledWith('1');
+      expect(userRepository.softDelete).toHaveBeenCalledWith('1', expect.objectContaining({
+        name: 'Deleted user',
+        email: expect.stringContaining('@deleted.invalid'),
+        phone: null,
+        resetPasswordToken: null,
+        resetPasswordExpiry: null,
+        loyaltyPoints: 0,
+      }));
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('1');
+      expect(bcrypt.hash).toHaveBeenCalled();
     });
   });
 
@@ -154,12 +165,18 @@ describe('userService', () => {
       await expect(userService.deleteUser('1')).rejects.toThrow('User not found');
     });
 
-    it('deletes user when found', async () => {
+    it('anonymizes and soft-deletes user, then revokes sessions', async () => {
       userRepository.findById.mockResolvedValue({ id: '1' });
-      userRepository.delete.mockResolvedValue();
+      userRepository.softDelete.mockResolvedValue();
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue();
 
       await userService.deleteUser('1');
-      expect(userRepository.delete).toHaveBeenCalledWith('1');
+
+      expect(userRepository.softDelete).toHaveBeenCalledWith('1', expect.objectContaining({
+        name: 'Deleted user',
+        email: expect.stringContaining('@deleted.invalid'),
+      }));
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('1');
     });
   });
 

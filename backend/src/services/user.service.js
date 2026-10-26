@@ -1,9 +1,30 @@
 'use strict';
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const userRepository = require('../repositories/user.repository');
+const refreshTokenRepository = require('../repositories/refreshToken.repository');
 const ApiError = require('../utils/ApiError');
 const { BCRYPT_SALT_ROUNDS } = require('../config/env');
+
+/**
+ * Soft-delete a user by anonymizing PII instead of removing the row.
+ * Appointments, payments, reviews and audit logs reference the user and a
+ * hard delete would CASCADE them away. Anonymization also frees the unique
+ * `email` so the address can be re-registered, and revokes every session.
+ */
+const anonymizeAndSoftDelete = async (user) => {
+  await userRepository.softDelete(user.id, {
+    name: 'Deleted user',
+    email: `${user.id.slice(0, 8)}@deleted.invalid`,
+    phone: null,
+    password: await bcrypt.hash(crypto.randomBytes(24).toString('hex'), BCRYPT_SALT_ROUNDS),
+    resetPasswordToken: null,
+    resetPasswordExpiry: null,
+    loyaltyPoints: 0,
+  });
+  await refreshTokenRepository.revokeAllForUser(user.id);
+};
 
 const userService = {
   async getProfile(userId) {
@@ -26,13 +47,13 @@ const userService = {
     if (!isMatch) throw ApiError.badRequest('Current password is incorrect');
 
     const hashed = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
-    await userRepository.update(userId, { password: hashed, refreshToken: null });
+    await userRepository.update(userId, { password: hashed });
   },
 
   async deleteAccount(userId) {
     const user = await userRepository.findById(userId);
     if (!user) throw ApiError.notFound('User not found');
-    await userRepository.delete(userId);
+    await anonymizeAndSoftDelete(user);
   },
 
   // Admin operations
@@ -57,7 +78,7 @@ const userService = {
   async deleteUser(id) {
     const user = await userRepository.findById(id);
     if (!user) throw ApiError.notFound('User not found');
-    await userRepository.delete(id);
+    await anonymizeAndSoftDelete(user);
   },
 
   async updateUser(id, dto) {

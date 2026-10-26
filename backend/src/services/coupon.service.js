@@ -103,7 +103,11 @@ const couponService = {
     const existing = await couponRepository.findById(id);
     if (!existing) throw ApiError.notFound('Coupon not found');
 
-    await couponRepository.delete(id);
+    // Soft delete (Phase 3): history keeps the coupon row (FK stays intact) and
+    // the code suffix frees the unique `code` so the original can be re-created.
+    await couponRepository.softDelete(id, {
+      code: `${existing.code} (deleted ${id.slice(0, 6)})`,
+    });
 
     await auditLog({
       userId: actorId,

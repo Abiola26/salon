@@ -3,13 +3,12 @@
 const cron = require('node-cron');
 const { prisma } = require('../config/db');
 const { sendAppointmentReminderEmail } = require('./email');
-const transporter = require('../config/email');
-const { EMAIL } = require('../config/env');
+const { processEmailQueue } = require('./emailQueue');
+const { SALON_TIMEZONE } = require('../config/env');
 const logger = require('../config/logger');
-
 /**
  * Send reminder emails for appointments scheduled for tomorrow.
- * Runs daily at 9:00 AM.
+ * Runs daily at 9:00 AM in the salon's timezone.
  */
 const scheduleAppointmentReminders = () => {
   cron.schedule('0 9 * * *', async () => {
@@ -52,9 +51,9 @@ const scheduleAppointmentReminders = () => {
     } catch (error) {
       logger.error(`Reminder cron job failed: ${error.message}`);
     }
-  });
+  }, { timezone: SALON_TIMEZONE });
 
-  logger.info('📅 Appointment reminder scheduler initialized (daily at 9:00 AM)');
+  logger.info(`📅 Appointment reminder scheduler initialized (daily at 9:00 AM, ${SALON_TIMEZONE})`);
 };
 
 /**
@@ -82,63 +81,29 @@ const scheduleCompletionMarker = () => {
     } catch (error) {
       logger.error(`Completion marker cron failed: ${error.message}`);
     }
-  });
+  }, { timezone: SALON_TIMEZONE });
 
-  logger.info('✅ Appointment completion marker initialized (hourly)');
+  logger.info(`✅ Appointment completion marker initialized (hourly, ${SALON_TIMEZONE})`);
 };
 
 /**
  * Process pending emails from the database email queue.
- * Runs every 2 minutes, handles up to 10 emails per tick.
+ * Runs every 2 minutes; the queue itself is also nudged after each enqueue
+ * (see utils/emailQueue.js), so this cron is only the retry backstop.
  */
 const scheduleEmailQueueProcessor = () => {
   cron.schedule('*/2 * * * *', async () => {
     try {
-      const pending = await prisma.emailQueue.findMany({
-        where: { status: 'PENDING', attempts: { lt: 3 } },
-        take: 10,
-        orderBy: { createdAt: 'asc' },
-      });
-
-      if (pending.length === 0) return;
-
-      logger.info(`📧 Email queue processor: ${pending.length} email(s) to send`);
-
-      for (const email of pending) {
-        try {
-          await transporter.sendMail({
-            from: EMAIL.FROM,
-            to: email.to,
-            subject: email.subject,
-            html: email.html,
-          });
-
-          await prisma.emailQueue.update({
-            where: { id: email.id },
-            data: { status: 'SENT', updatedAt: new Date() },
-          });
-
-          logger.info(`✅ Email sent from queue → ${email.to}`);
-        } catch (err) {
-          const newAttempts = email.attempts + 1;
-          await prisma.emailQueue.update({
-            where: { id: email.id },
-            data: {
-              attempts: newAttempts,
-              lastError: err.message,
-              status: newAttempts >= 3 ? 'FAILED' : 'PENDING',
-              updatedAt: new Date(),
-            },
-          });
-          logger.warn(`⚠️  Email failed (attempt ${newAttempts}) → ${email.to}: ${err.message}`);
-        }
+      const sent = await processEmailQueue();
+      if (sent > 0) {
+        logger.info(`📬 Email queue cron delivered ${sent} email(s)`);
       }
     } catch (error) {
       logger.error(`Email queue processor cron failed: ${error.message}`);
     }
-  });
+  }, { timezone: SALON_TIMEZONE });
 
-  logger.info('📬 Email queue processor initialized (every 2 minutes)');
+  logger.info(`📬 Email queue processor initialized (every 2 minutes, ${SALON_TIMEZONE})`);
 };
 
 const initSchedulers = () => {

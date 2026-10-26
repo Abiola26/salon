@@ -10,32 +10,37 @@ const {
   sendCancellationEmail,
   sendRefundEmail,
 } = require('../../src/utils/email');
-const transporter = require('../../src/config/email');
+const { enqueueEmail } = require('../../src/utils/emailQueue');
 
-jest.mock('../../src/config/email', () => ({
-  sendMail: jest.fn(),
+jest.mock('../../src/utils/emailQueue', () => ({
+  enqueueEmail: jest.fn(),
+  processEmailQueue: jest.fn(),
 }));
 
 describe('emailUtils', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    enqueueEmail.mockResolvedValue({ id: 'q1' });
   });
 
   describe('sendEmail', () => {
-    it('sends email successfully', async () => {
-      transporter.sendMail.mockResolvedValue({ messageId: 'm1' });
-
+    it('queues the email via the email queue pipeline', async () => {
       const res = await sendEmail({ to: 't@t.com', subject: 'sub', html: '<p>h</p>', text: 't' });
-      expect(res.messageId).toBe('m1');
-      expect(transporter.sendMail).toHaveBeenCalled();
+      expect(res).toEqual({ id: 'q1' });
+      expect(enqueueEmail).toHaveBeenCalledWith({ to: 't@t.com', subject: 'sub', html: '<p>h</p>' });
     });
 
-    it('throws error when transporter fails', async () => {
-      transporter.sendMail.mockRejectedValue(new Error('SMTP error'));
+    it('falls back to text when no html is given', async () => {
+      await sendEmail({ to: 't@t.com', subject: 'sub', text: 'plain' });
+      expect(enqueueEmail).toHaveBeenCalledWith({ to: 't@t.com', subject: 'sub', html: 'plain' });
+    });
+
+    it('does not throw when enqueue fails (returns null)', async () => {
+      enqueueEmail.mockResolvedValue(null);
 
       await expect(
-        sendEmail({ to: 't@t.com', subject: 'sub', html: '<p>h</p>', text: 't' })
-      ).rejects.toThrow('SMTP error');
+        sendEmail({ to: 't@t.com', subject: 'sub', html: '<p>h</p>' })
+      ).resolves.toBeNull();
     });
   });
 
@@ -45,67 +50,63 @@ describe('emailUtils', () => {
     const service = { name: 'Cut', price: '50.00', duration: 30 };
     const payment = { amount: 50.00, paymentType: 'FULL', stripePaymentIntentId: 'pi_123' };
 
-    beforeEach(() => {
-      transporter.sendMail.mockResolvedValue({ messageId: 'test-id' });
-    });
-
     it('sendWelcomeEmail', async () => {
       await sendWelcomeEmail(user);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Welcome') })
       );
     });
 
     it('sendPasswordResetEmail', async () => {
       await sendPasswordResetEmail(user, 'token123');
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Password Reset') })
       );
     });
 
     it('sendAppointmentConfirmationEmail', async () => {
       await sendAppointmentConfirmationEmail(user, appointment, service);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Confirmed') })
       );
     });
 
     it('sendAppointmentReminderEmail', async () => {
       await sendAppointmentReminderEmail(user, appointment, service);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Reminder') })
       );
     });
 
     it('sendPaymentConfirmationEmail', async () => {
       await sendPaymentConfirmationEmail(user, payment, appointment, service);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Payment Confirmed') })
       );
     });
 
     it('sendPaymentConfirmationEmail with string amount', async () => {
       await sendPaymentConfirmationEmail(user, { ...payment, amount: '50.00' }, appointment, service);
-      expect(transporter.sendMail).toHaveBeenCalled();
+      expect(enqueueEmail).toHaveBeenCalled();
     });
 
     it('sendCancellationEmail', async () => {
       await sendCancellationEmail(user, appointment, service);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Cancelled') })
       );
     });
 
     it('sendRefundEmail', async () => {
       await sendRefundEmail(user, payment, service);
-      expect(transporter.sendMail).toHaveBeenCalledWith(
+      expect(enqueueEmail).toHaveBeenCalledWith(
         expect.objectContaining({ to: user.email, subject: expect.stringContaining('Refund') })
       );
     });
 
     it('sendRefundEmail with string amount', async () => {
       await sendRefundEmail(user, { ...payment, amount: '50.00' }, service);
-      expect(transporter.sendMail).toHaveBeenCalled();
+      expect(enqueueEmail).toHaveBeenCalled();
     });
   });
 });

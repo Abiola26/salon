@@ -5,7 +5,10 @@ const { prisma } = require('../config/db');
 const staffRepository = {
   findAll: ({ skip = 0, take = 20, isActive } = {}) =>
     prisma.staff.findMany({
-      where: { ...(isActive !== undefined && { isActive }) },
+      where: {
+        deletedAt: null,
+        ...(isActive !== undefined && { isActive }),
+      },
       include: {
         services: { select: { id: true, name: true, duration: true, price: true } },
         _count: { select: { appointments: true } },
@@ -15,11 +18,11 @@ const staffRepository = {
       take,
     }),
 
-  count: (where = {}) => prisma.staff.count({ where }),
+  count: (where = {}) => prisma.staff.count({ where: { ...where, deletedAt: null } }),
 
   findById: (id) =>
-    prisma.staff.findUnique({
-      where: { id },
+    prisma.staff.findFirst({
+      where: { id, deletedAt: null },
       include: {
         services: { select: { id: true, name: true, duration: true, price: true } },
         _count: { select: { appointments: true } },
@@ -30,6 +33,7 @@ const staffRepository = {
     prisma.staff.findMany({
       where: {
         isActive: true,
+        deletedAt: null,
         services: { some: { id: serviceId } },
       },
       include: { services: { select: { id: true, name: true } } },
@@ -48,7 +52,8 @@ const staffRepository = {
       include: { services: { select: { id: true, name: true } } },
     }),
 
-  delete: (id) => prisma.staff.delete({ where: { id } }),
+  softDelete: (id) =>
+    prisma.staff.update({ where: { id }, data: { deletedAt: new Date() } }),
 };
 
 module.exports = staffRepository;

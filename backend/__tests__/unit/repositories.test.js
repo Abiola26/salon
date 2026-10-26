@@ -24,6 +24,7 @@ jest.mock('../../src/config/db', () => ({
     },
     coupon: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
       create: jest.fn(),
@@ -51,6 +52,7 @@ jest.mock('../../src/config/db', () => ({
       findMany: jest.fn(),
       count: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -80,19 +82,25 @@ describe('Repositories', () => {
   });
 
   describe('userRepository', () => {
-    it('calls standard findById', async () => {
+    it('calls standard findById (soft-delete filtered)', async () => {
       await userRepository.findById('1');
-      expect(prisma.user.findUnique).toHaveBeenCalled();
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: '1', deletedAt: null } })
+      );
     });
 
     it('calls findByIdFull', async () => {
       await userRepository.findByIdFull('1');
-      expect(prisma.user.findUnique).toHaveBeenCalled();
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: '1', deletedAt: null } })
+      );
     });
 
     it('calls findByEmail', async () => {
       await userRepository.findByEmail('t@t.com');
-      expect(prisma.user.findUnique).toHaveBeenCalled();
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { email: 't@t.com', deletedAt: null } })
+      );
     });
 
     it('calls findAll with and without role', async () => {
@@ -117,9 +125,14 @@ describe('Repositories', () => {
       expect(prisma.user.update).toHaveBeenCalledTimes(2);
     });
 
-    it('calls delete', async () => {
-      await userRepository.delete('1');
-      expect(prisma.user.delete).toHaveBeenCalled();
+    it('calls softDelete', async () => {
+      await userRepository.softDelete('1', { name: 'Deleted user' });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: '1' },
+          data: expect.objectContaining({ name: 'Deleted user', deletedAt: expect.any(Date) }),
+        })
+      );
     });
 
     it('calls findByResetToken', async () => {
@@ -129,7 +142,7 @@ describe('Repositories', () => {
   });
 
   describe('couponRepository', () => {
-    it('calls findByCode, findById, count, create, update, incrementUsage, delete', async () => {
+    it('calls findByCode, findById, findAll, count, create, update, incrementUsage, softDelete', async () => {
       await couponRepository.findByCode('SAVE10');
       await couponRepository.findById('c1');
       await couponRepository.findAll();
@@ -137,15 +150,14 @@ describe('Repositories', () => {
       await couponRepository.create({ code: 'CODE' });
       await couponRepository.update('c1', { code: 'CODE' });
       await couponRepository.incrementUsage('c1');
-      await couponRepository.delete('c1');
+      await couponRepository.softDelete('c1', { code: 'CODE (deleted c1)' });
 
-      expect(prisma.coupon.findUnique).toHaveBeenCalledTimes(2);
+      expect(prisma.coupon.findFirst).toHaveBeenCalledTimes(2);
       expect(prisma.coupon.findMany).toHaveBeenCalled();
-      expect(prisma.coupon.count).toHaveBeenCalled();
+      expect(prisma.coupon.count).toHaveBeenCalledWith({ where: { deletedAt: null } });
       expect(prisma.coupon.create).toHaveBeenCalled();
-      expect(prisma.coupon.update).toHaveBeenCalledTimes(1);
+      expect(prisma.coupon.update).toHaveBeenCalledTimes(2);
       expect(prisma.$executeRaw).toHaveBeenCalled(); // conditional incrementUsage
-      expect(prisma.coupon.delete).toHaveBeenCalled();
     });
   });
 
@@ -172,7 +184,7 @@ describe('Repositories', () => {
   });
 
   describe('serviceRepository', () => {
-    it('calls findAll, count, findById, findByName, create, update, delete, findMostBooked', async () => {
+    it('calls findAll, count, findById, findByName, create, update, softDelete, findMostBooked', async () => {
       await serviceRepository.findAll({ isActive: true });
       await serviceRepository.findAll();
       await serviceRepository.count();
@@ -180,21 +192,19 @@ describe('Repositories', () => {
       await serviceRepository.findByName('Cut');
       await serviceRepository.create({ name: 'Cut' });
       await serviceRepository.update('s1', { name: 'Cut' });
-      await serviceRepository.delete('s1');
+      await serviceRepository.softDelete('s1');
       await serviceRepository.findMostBooked();
 
       expect(prisma.service.findMany).toHaveBeenCalledTimes(3);
-      expect(prisma.service.count).toHaveBeenCalled();
-      expect(prisma.service.findUnique).toHaveBeenCalled();
+      expect(prisma.service.count).toHaveBeenCalledWith({ where: { deletedAt: null } });
       expect(prisma.service.findFirst).toHaveBeenCalled();
       expect(prisma.service.create).toHaveBeenCalled();
-      expect(prisma.service.update).toHaveBeenCalled();
-      expect(prisma.service.delete).toHaveBeenCalled();
+      expect(prisma.service.update).toHaveBeenCalledTimes(2); // update + softDelete
     });
   });
 
   describe('staffRepository', () => {
-    it('calls findAll, count, findById, findByServiceId, create, update, delete', async () => {
+    it('calls findAll, count, findById, findByServiceId, create, update, softDelete', async () => {
       await staffRepository.findAll({ isActive: true });
       await staffRepository.findAll();
       await staffRepository.count();
@@ -202,14 +212,13 @@ describe('Repositories', () => {
       await staffRepository.findByServiceId('s1');
       await staffRepository.create({ name: 'Stylist' });
       await staffRepository.update('st1', { name: 'Stylist' });
-      await staffRepository.delete('st1');
+      await staffRepository.softDelete('st1');
 
       expect(prisma.staff.findMany).toHaveBeenCalledTimes(3);
       expect(prisma.staff.count).toHaveBeenCalled();
-      expect(prisma.staff.findUnique).toHaveBeenCalled();
+      expect(prisma.staff.findFirst).toHaveBeenCalled();
       expect(prisma.staff.create).toHaveBeenCalled();
-      expect(prisma.staff.update).toHaveBeenCalled();
-      expect(prisma.staff.delete).toHaveBeenCalled();
+      expect(prisma.staff.update).toHaveBeenCalledTimes(2); // update + softDelete
     });
   });
 

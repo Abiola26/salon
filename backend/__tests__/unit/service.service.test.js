@@ -91,24 +91,20 @@ describe('serviceService', () => {
   });
 
   describe('deleteService', () => {
-    it('throws when service has linked appointments', async () => {
-      serviceRepository.findById.mockResolvedValue({ id: 's1', name: 'Haircut' });
-      appointmentRepository.count.mockResolvedValue(5);
+    it('throws when service not found', async () => {
+      serviceRepository.findById.mockResolvedValue(null);
 
-      await expect(serviceService.deleteService('s1')).rejects.toThrow(
-        'Cannot delete service "Haircut" — it has 5 linked appointment(s)'
-      );
+      await expect(serviceService.deleteService('s1')).rejects.toThrow('Service not found');
     });
 
-    it('deletes service successfully when no appointments are linked', async () => {
+    it('soft-deletes (history-safe) and audits, even with linked appointments', async () => {
       serviceRepository.findById.mockResolvedValue({ id: 's1', name: 'Haircut' });
-      appointmentRepository.count.mockResolvedValue(0);
-      serviceRepository.delete.mockResolvedValue({});
+      serviceRepository.softDelete.mockResolvedValue({});
       auditLog.mockResolvedValue({});
 
       await serviceService.deleteService('s1', 'admin-1', '127.0.0.1');
 
-      expect(serviceRepository.delete).toHaveBeenCalledWith('s1');
+      expect(serviceRepository.softDelete).toHaveBeenCalledWith('s1');
       expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE_SERVICE' }));
     });
   });
