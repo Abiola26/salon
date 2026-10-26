@@ -15,6 +15,7 @@ const {
   timeToMinutes,
   WORKING_HOURS,
 } = require('../config/workingHours');
+const { toCents } = require('../utils/money');
 
 // ── Loyalty points config ─────────────────────────────────────────────────────
 const POINTS_PER_DOLLAR_SPENT = 0.1;   // 1 point per $10 paid
@@ -63,9 +64,10 @@ const appointmentService = {
         if (notExpired && !notStartedYet && hasUsage) {
           couponId = coupon.id;
           if (coupon.discountType === 'PERCENTAGE') {
-            couponDiscount = (parseFloat(service.price) * parseFloat(coupon.discountValue)) / 100;
+            // Integer-cents math, rounded once — 15.5% of $33.33 = $5.17, not 5.166...
+            couponDiscount = Math.round((toCents(service.price) * parseFloat(coupon.discountValue)) / 100) / 100;
           } else {
-            couponDiscount = Math.min(parseFloat(coupon.discountValue), parseFloat(service.price));
+            couponDiscount = Math.min(toCents(coupon.discountValue), toCents(service.price)) / 100;
           }
         }
       }
@@ -149,7 +151,8 @@ const appointmentService = {
             appointmentTime: dto.appointmentTime,
             notes: dto.notes || null,
             status: 'PENDING',
-            paymentStatus: 'UNPAID',
+            // Fully discounted ⇒ nothing left to charge (paymentStatus is PAID).
+            paymentStatus: toCents(service.price) <= toCents(discountAmount) ? 'PAID' : 'UNPAID',
             amountPaid: 0,
             discountAmount,
             pointsRedeemed,
