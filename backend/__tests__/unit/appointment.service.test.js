@@ -5,6 +5,7 @@ const appointmentRepository = require('../../src/repositories/appointment.reposi
 const serviceRepository = require('../../src/repositories/service.repository');
 const staffRepository = require('../../src/repositories/staff.repository');
 const couponRepository = require('../../src/repositories/coupon.repository');
+const staffLeaveRepository = require('../../src/repositories/staffLeave.repository');
 const { prisma } = require('../../src/config/db');
 const emailUtils = require('../../src/utils/email');
 const { auditLog } = require('../../src/utils/audit');
@@ -14,6 +15,7 @@ jest.mock('../../src/repositories/appointment.repository');
 jest.mock('../../src/repositories/service.repository');
 jest.mock('../../src/repositories/staff.repository');
 jest.mock('../../src/repositories/coupon.repository');
+jest.mock('../../src/repositories/staffLeave.repository');
 jest.mock('../../src/config/db', () => {
   const prisma = {
     user: {
@@ -38,6 +40,8 @@ describe('appointmentService', () => {
     jest.resetAllMocks();
     emailUtils.sendAppointmentConfirmationEmail.mockResolvedValue({});
     emailUtils.sendCancellationEmail.mockResolvedValue({});
+    // Nobody is on leave unless a test says so
+    staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue([]);
   });
 
   describe('createAppointment', () => {
@@ -106,6 +110,44 @@ describe('appointmentService', () => {
           staffId: 'st1',
         })
       ).rejects.toThrow('already booked');
+    });
+
+    it('throws when selected stylist is on leave', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
+
+      await expect(
+        appointmentService.createAppointment('u1', {
+          serviceId: 's1',
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+          staffId: 'st1',
+        })
+      ).rejects.toThrow('on leave');
+      expect(appointmentRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('auto-assign skips stylists who are on leave', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findByServiceId.mockResolvedValue([{ id: 'st1' }, { id: 'st2' }]);
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
+      appointmentRepository.create.mockResolvedValue({ id: 'a1' });
+
+      await appointmentService.createAppointment('u1', {
+        serviceId: 's1',
+        appointmentDate: '2026-06-29',
+        appointmentTime: '10:00',
+      });
+
+      expect(appointmentRepository.checkSlotConflict).toHaveBeenCalledWith(
+        '2026-06-29', '10:00', null, 'st2', 30, expect.anything()
+      );
+      expect(appointmentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ staffId: 'st2' }),
+        expect.anything()
+      );
     });
 
     it('creates appointment successfully with valid coupon percentage', async () => {
@@ -385,6 +427,20 @@ describe('appointmentService', () => {
       ).rejects.toThrow('already booked');
       expect(appointmentRepository.update).not.toHaveBeenCalled();
     });
+
+    it('throws when the assigned stylist is on leave on the new date', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
+      serviceRepository.findById.mockResolvedValue({ duration: 30 });
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
+
+      await expect(
+        appointmentService.rescheduleAppointment('a1', 'u1', 'CUSTOMER', {
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+        })
+      ).rejects.toThrow('on leave');
+      expect(appointmentRepository.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancelAppointment', () => {
@@ -462,6 +518,45 @@ describe('appointmentService', () => {
       
       expect(slot1000.available).toBe(false);
       expect(slot1030.available).toBe(true);
+    });
+
+    it('returns no slots with a leave reason when the stylist is off', async () => {
+      serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
+
+      const result = await appointmentService.getAvailableSlots('2026-06-29', 's1', 'st1');
+
+      expect(result.open).toBe(true);
+      expect(result.onLeave).toBe(true);
+      expect(result.reason).toContain('on leave');
+      expect(result.slots).toEqual([]);
+      expect(appointmentRepository.findBookedSlots).not.toHaveBeenCalled();
+    });
+
+    it('returns no slots when every stylist for the service is on leave', async () => {
+      serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findByServiceId.mockResolvedValue([{ id: 'st1' }, { id: 'st2' }]);
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1', 'st2']);
+
+      const result = await appointmentService.getAvailableSlots('2026-06-29', 's1');
+
+      expect(result.onLeave).toBe(true);
+      expect(result.reason).toContain('All stylists');
+      expect(result.slots).toEqual([]);
+    });
+
+    it('any-stylist mode only consults stylists who are working', async () => {
+      serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findByServiceId.mockResolvedValue([{ id: 'st1' }, { id: 'st2' }]);
+      staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
+      appointmentRepository.findBookedSlots.mockResolvedValue([]);
+
+      const result = await appointmentService.getAvailableSlots('2026-06-29', 's1');
+
+      expect(result.onLeave).toBeUndefined();
+      expect(result.slots.length).toBeGreaterThan(0);
+      expect(appointmentRepository.findBookedSlots).toHaveBeenCalledTimes(1);
+      expect(appointmentRepository.findBookedSlots).toHaveBeenCalledWith('2026-06-29', 'st2');
     });
   });
 });

@@ -21,6 +21,7 @@ let createdStaffId = '';
 let createdCouponId = '';
 let createdCouponCode = '';
 let createdReviewId = '';
+let leaveBookingId = '';
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const tomorrow = new Date();
@@ -333,6 +334,151 @@ describe('Staff API', () => {
 });
 
 // =============================================================================
+// STAFF LEAVE ROUTES
+// =============================================================================
+describe('Staff Leave API', () => {
+  let leaveId = '';
+  const leaveDate = tomorrowStr;
+
+  it('PUT /api/staff/:id — attach the stylist to the test service', async () => {
+    if (!createdStaffId || !createdServiceId) return;
+    const res = await request(app)
+      .put(`/api/staff/${createdStaffId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ serviceIds: [createdServiceId], isActive: true });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/staff/:id/leave — admin should create a leave period', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .post(`/api/staff/${createdStaffId}/leave`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ startDate: leaveDate, endDate: leaveDate, reason: 'Integration day off' });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toHaveProperty('id');
+    leaveId = res.body.data.id;
+  });
+
+  it('GET /api/staff/leave — admin should list upcoming leave', async () => {
+    const res = await request(app)
+      .get('/api/staff/leave')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.data.some((l) => l.id === leaveId)).toBe(true);
+  });
+
+  it('GET /api/staff/leave — customer should receive 403', async () => {
+    const res = await request(app)
+      .get('/api/staff/leave')
+      .set('Authorization', `Bearer ${customerToken}`);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('GET /api/staff/:id/leave — admin should list leave for one stylist', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .get(`/api/staff/${createdStaffId}/leave`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.some((l) => l.id === leaveId)).toBe(true);
+  });
+
+  it('GET /api/appointments/available-slots — stylist on leave reports no slots', async () => {
+    if (!createdStaffId || !createdServiceId) return;
+    const res = await request(app).get('/api/appointments/available-slots').query({
+      date: leaveDate,
+      serviceId: createdServiceId,
+      staffId: createdStaffId,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.onLeave).toBe(true);
+    expect(res.body.data.slots).toEqual([]);
+  });
+
+  it('POST /api/appointments — booking a stylist on leave should return 409', async () => {
+    if (!createdStaffId || !createdServiceId || !customerToken) return;
+    const res = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        staffId: createdStaffId,
+        appointmentDate: leaveDate,
+        appointmentTime: '10:00',
+        notes: 'Should fail — stylist on leave',
+      });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.message).toContain('on leave');
+  });
+
+  it('POST /api/staff/:id/leave — overlapping range should return 409', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .post(`/api/staff/${createdStaffId}/leave`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ startDate: leaveDate, endDate: leaveDate });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.message).toContain('overlaps');
+  });
+
+  it('DELETE /api/staff/leave/:leaveId — admin should delete the leave', async () => {
+    if (!leaveId) return;
+    const res = await request(app)
+      .delete(`/api/staff/leave/${leaveId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('POST /api/appointments — booking succeeds after the leave is removed', async () => {
+    if (!createdStaffId || !createdServiceId || !customerToken) return;
+    const res = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        staffId: createdStaffId,
+        appointmentDate: leaveDate,
+        appointmentTime: '10:00',
+        notes: 'Booking after leave removal',
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toHaveProperty('id');
+    leaveBookingId = res.body.data.id;
+  });
+
+  it('POST /api/staff/:id/leave — refuses leave over a live appointment', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .post(`/api/staff/${createdStaffId}/leave`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ startDate: leaveDate, endDate: leaveDate });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.message).toContain('existing appointment');
+  });
+
+  it('POST /api/staff/:id/leave — invalid range should fail validation', async () => {
+    if (!createdStaffId) return;
+    const res = await request(app)
+      .post(`/api/staff/${createdStaffId}/leave`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ startDate: '2027-01-10', endDate: '2027-01-01' });
+
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+// =============================================================================
 // COUPONS API
 // =============================================================================
 describe('Coupons API', () => {
@@ -519,6 +665,12 @@ afterAll(async () => {
     if (createdAppointmentId) {
       await prisma.appointment.delete({
         where: { id: createdAppointmentId },
+      }).catch(() => {});
+    }
+
+    if (leaveBookingId) {
+      await prisma.appointment.delete({
+        where: { id: leaveBookingId },
       }).catch(() => {});
     }
 

@@ -49,6 +49,8 @@ enum AuditAction {
   CREATE_STAFF
   UPDATE_STAFF
   DELETE_STAFF
+  CREATE_STAFF_LEAVE
+  DELETE_STAFF_LEAVE
   CREATE_COUPON
   UPDATE_COUPON
   DELETE_COUPON
@@ -135,8 +137,27 @@ model Staff {
 
   services     Service[]     // Implicit join table _ServiceToStaff
   appointments Appointment[]
+  leaves       StaffLeave[]
 
   @@map("staff")
+}
+
+// Blackout ranges: a stylist on leave cannot be booked (availability slots,
+// createAppointment and rescheduleAppointment all check this table).
+model StaffLeave {
+  id         String   @id @default(uuid())
+  staffId    String
+  // Date-only (inclusive range) — normalized to UTC midnight by the service.
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, startDate, endDate])
+  @@map("staff_leave")
 }
 
 model Service {

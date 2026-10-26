@@ -4,6 +4,7 @@ const appointmentRepository = require('../repositories/appointment.repository');
 const serviceRepository = require('../repositories/service.repository');
 const staffRepository = require('../repositories/staff.repository');
 const couponRepository = require('../repositories/coupon.repository');
+const staffLeaveRepository = require('../repositories/staffLeave.repository');
 const { prisma } = require('../config/db');
 const { sendAppointmentConfirmationEmail, sendCancellationEmail } = require('../utils/email');
 const { auditLog } = require('../utils/audit');
@@ -103,7 +104,9 @@ const appointmentService = {
         let resolvedStaffId = staffId;
         if (!resolvedStaffId) {
           const staffList = await staffRepository.findByServiceId(dto.serviceId);
+          const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dto.appointmentDate, tx);
           for (const candidate of staffList) {
+            if (onLeaveIds.includes(candidate.id)) continue;
             const conflict = await appointmentRepository.checkSlotConflict(
               dto.appointmentDate, dto.appointmentTime, null, candidate.id, service.duration, tx
             );
@@ -113,6 +116,13 @@ const appointmentService = {
             }
           }
           // If no staff found (no stylists for service), fall back to no-staff booking
+        } else {
+          const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dto.appointmentDate, tx);
+          if (onLeaveIds.includes(resolvedStaffId)) {
+            throw ApiError.conflict(
+              `Selected stylist is on leave on ${dto.appointmentDate}. Please choose a different date or stylist.`
+            );
+          }
         }
 
         const conflict = await appointmentRepository.checkSlotConflict(
@@ -255,6 +265,15 @@ const appointmentService = {
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
 
+        if (appointment.staffId) {
+          const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dto.appointmentDate, tx);
+          if (onLeaveIds.includes(appointment.staffId)) {
+            throw ApiError.conflict(
+              'The assigned stylist is on leave on this date. Please choose a different date or stylist.'
+            );
+          }
+        }
+
         const conflict = await appointmentRepository.checkSlotConflict(
           dto.appointmentDate,
           dto.appointmentTime,
@@ -370,15 +389,44 @@ const appointmentService = {
     // Determine which appointments to check
     let bookedForStaff = [];
     if (staffId) {
+      // Stylist unavailable for the whole date (leave) → nothing to book
+      const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dateStr);
+      if (onLeaveIds.includes(staffId)) {
+        return {
+          date: dateStr,
+          open: true,
+          onLeave: true,
+          reason: 'This stylist is on leave on the selected date.',
+          businessHours: { open: WORKING_HOURS.openTime, close: WORKING_HOURS.closeTime },
+          serviceDurationMinutes: durationMin,
+          slots: [],
+        };
+      }
       // Only check the specific stylist's bookings
       bookedForStaff = await appointmentRepository.findBookedSlots(dateStr, staffId);
     } else if (serviceId) {
       // "Any Stylist" mode: gather all stylists for this service
       const staffList = await staffRepository.findByServiceId(serviceId);
-      if (staffList.length > 0) {
+      const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dateStr);
+      const workingStaff = staffList.filter((s) => !onLeaveIds.includes(s.id));
+
+      if (workingStaff.length === 0 && staffList.length > 0) {
+        // Every stylist for this service is off — nobody can do the work
+        return {
+          date: dateStr,
+          open: true,
+          onLeave: true,
+          reason: 'All stylists for this service are on leave on the selected date.',
+          businessHours: { open: WORKING_HOURS.openTime, close: WORKING_HOURS.closeTime },
+          serviceDurationMinutes: durationMin,
+          slots: [],
+        };
+      }
+
+      if (workingStaff.length > 0) {
         // For each slot, it's available if at least ONE stylist is free
         const blockedByStaff = await Promise.all(
-          staffList.map((s) => appointmentRepository.findBookedSlots(dateStr, s.id))
+          workingStaff.map((s) => appointmentRepository.findBookedSlots(dateStr, s.id))
         );
 
         const slots = allSlots.map((time) => {

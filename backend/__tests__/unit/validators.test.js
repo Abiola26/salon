@@ -187,3 +187,40 @@ describe('userValidator', () => {
     });
   });
 });
+
+// ─── Staff Leave Validator ─────────────────────────────────────────────────────
+
+const { createLeaveSchema } = require('../../src/validators/staffLeave.validator');
+
+describe('staffLeaveValidator', () => {
+  describe('createLeaveSchema', () => {
+    it('validates a well-formed range', () => {
+      const r = createLeaveSchema.safeParse({
+        startDate: '2026-08-10',
+        endDate: '2026-08-15',
+        reason: 'Vacation',
+      });
+      expect(r.success).toBe(true);
+    });
+
+    it('allows omitting the reason', () => {
+      expect(createLeaveSchema.safeParse({ startDate: '2026-08-10', endDate: '2026-08-10' }).success).toBe(true);
+    });
+
+    it('rejects a malformed date', () => {
+      const r = createLeaveSchema.safeParse({ startDate: '08/10/2026', endDate: '2026-08-15' });
+      expect(r.success).toBe(false);
+      expect(r.error.errors[0].message).toContain('YYYY-MM-DD');
+    });
+
+    it('rejects endDate before startDate (refine)', () => {
+      const r = createLeaveSchema.safeParse({ startDate: '2026-08-15', endDate: '2026-08-10' });
+      expect(r.success).toBe(false);
+      expect(r.error.errors[0].message).toBe('End date must be on or after start date');
+    });
+
+    it('rejects a missing startDate', () => {
+      expect(createLeaveSchema.safeParse({ endDate: '2026-08-15' }).success).toBe(false);
+    });
+  });
+});
