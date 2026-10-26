@@ -20,9 +20,11 @@ cd frontend && npm install
 npm run dev                     # next dev
 npm run lint                    # eslint
 npm run build                   # next build (also the typecheck gate)
+npm run test                    # vitest run (jsdom + RTL)
+npm run test:watch              # vitest watch
 ```
 
-Run backend tests against a live PostgreSQL with a valid `backend/.env` (integration suite `__tests__/api.test.js` needs DB + seeded admin). Frontend has no test script.
+Run backend tests against a live PostgreSQL with a valid `backend/.env` (integration suite `__tests__/api.test.js` needs DB + seeded admin). Frontend tests are Vitest + React Testing Library under `frontend/src/**/__tests__`-style colocated `*.test.ts(x)` files (no network, no backend needed).
 
 ## Layout & flow
 
@@ -43,7 +45,7 @@ Frontend:
 - App Router under `src/app/`; pages are mostly `"use client"` with TanStack Query + react-hook-form/zod.
 - Shared axios client `src/lib/api.ts`: browser baseURL is `/api` (proxied by Next rewrites in `next.config.ts` to the backend); SSR/node uses `NEXT_PUBLIC_API_URL` or hardcoded prod URL. Do not point the browser client at `localhost:5000` directly.
 - Auth state `src/store/useAuthStore.ts`: access token in memory only; user persisted to localStorage (`salon-auth-storage`) — the refresh token is no longer in JS at all (httpOnly cookie). Axios interceptor serializes 401 → cookie refresh → retry (single-flight queue).
-- `frontend/src/middleware.ts` (Phase 2) gates `/admin`, `/dashboard`, `/login`, `/register` by verifying the refresh cookie with WebCrypto HS256 (no jose dep). It reads `JWT_REFRESH_SECRET` — **same value as backend — set it as a server env var in Vercel** (not `NEXT_PUBLIC_`); if unset, middleware falls back to cookie-presence gating (API still enforces real auth, so nothing is actually exposed — but admin role checks need the secret). Login redirect uses `?redirect=` (validated by `safeRedirect`).
+- `frontend/src/proxy.ts` (Phase 2, migrated from `middleware.ts` to the Next 16 proxy convention) gates `/admin`, `/dashboard`, `/login`, `/register` by verifying the refresh cookie with WebCrypto HS256 (no jose dep). It reads `JWT_REFRESH_SECRET` — **same value as backend — set it as a server env var in Vercel** (not `NEXT_PUBLIC_`); if unset, the proxy falls back to cookie-presence gating (API still enforces real auth, so nothing is actually exposed — but admin role checks need the secret). Login redirect uses `?redirect=` (validated by `safeRedirect`).
 - Admin routes have no server-side middleware — only per-page `useEffect` client redirects. Route protection is client-only today.
 
 ## Gotchas
@@ -66,12 +68,12 @@ Frontend:
 - Root README claims husky/lint-staged, docker-compose, ngrok.yml, and GitHub Actions CI — none of these exist in the tree. Trust package.json scripts and actual files, not the root README.
 - Frontend date handling: `new Date("YYYY-MM-DD")` parses as UTC and can shift appointments a day in negative-offset timezones. Prefer explicit local parsing when touching date display/filter logic.
 - React Query keys are inconsistent across pages (`["services"]` vs `["services-list"]` vs `["admin-services-list"]`) — be careful with cache invalidation; a shared key factory is a known improvement.
-- `animate-shake` and `animate-zoomIn` classes are referenced in TSX but not defined in `globals.css` — they are currently no-ops.
+- `animate-shake` and `animate-zoomIn` are now defined in `globals.css` (Phase 4) with a `prefers-reduced-motion` opt-out. Frontend tests: Vitest + RTL — `vitest.setup.ts` manually runs `cleanup()` because vitest globals are disabled; axios interceptor tests reach into `api.interceptors.*.handlers[0]` (`{ fulfilled, rejected }` shape, not separate entries). `@types/node` was bumped to ^22 for vitest 5 peer requirements. SEO: `robots.ts`/`sitemap.ts`/per-route server layouts (public pages are client components — metadata lives in sibling `layout.tsx`), `NEXT_PUBLIC_SITE_URL` feeds `src/lib/site.ts` (metadataBase/JSON-LD); set it in Vercel for canonical URLs.
 
 ## Verification order
 
-Backend: `npm run lint` → `npm run test:unit` → `npm test` (needs DB). Frontend: `npm run lint` → `npm run build`.
+Backend: `npm run lint` → `npm run test:unit` → `npm test` (needs DB). Frontend: `npm run lint` → `npm run test` → `npm run build`.
 
 ## Known improvement phases (context)
 
-A senior review divided work into: Phase 0 security patches — **done** (webhook idempotency via `payment.repository.processSucceeded`/`claimFailed`, booking race via advisory-lock transactions + overlap check + `unique_slot` removal, CORS allowlist behind `CORS_ALLOW_WILDCARD`, log redaction in `error.middleware`, open-redirect guard `frontend/src/lib/safeRedirect.ts`, seed hardening + demo creds removed, `start` runs `migrate deploy` without seeding), Phase 1 money/state-machine correctness — **done** (cents math via `utils/money.js`, discounts applied to charges, Stripe-first idempotent refunds with `processRefund` + appointment balance recompute, partial-refund manual policy, amount/currency integrity logs on webhooks, `REFUND_PAYMENT` audit enum migration `20261025000001`), Phase 2 auth/session — **done** (refresh-token table `refresh_tokens` with rotation+reuse detection via migration `20261025000002`, httpOnly `salon_refresh` cookie, cookie-based axios refresh, `frontend/src/middleware.ts` server-side route gating), Phase 3 ops — **done** (email queue wired into all call sites with immediate nudge + cron retries, `SALON_TIMEZONE` on all crons, soft deletes for services/staff/coupons/users with anonymizing user delete, composite indexes + `users.refreshToken` drop in migration `20261026000000`), then Phase 4 frontend tests/a11y/SEO, Phase 5 product features. Prefer Phase 0/1 items when touching payments, bookings, or auth.
+A senior review divided work into: Phase 0 security patches — **done** (webhook idempotency via `payment.repository.processSucceeded`/`claimFailed`, booking race via advisory-lock transactions + overlap check + `unique_slot` removal, CORS allowlist behind `CORS_ALLOW_WILDCARD`, log redaction in `error.middleware`, open-redirect guard `frontend/src/lib/safeRedirect.ts`, seed hardening + demo creds removed, `start` runs `migrate deploy` without seeding), Phase 1 money/state-machine correctness — **done** (cents math via `utils/money.js`, discounts applied to charges, Stripe-first idempotent refunds with `processRefund` + appointment balance recompute, partial-refund manual policy, amount/currency integrity logs on webhooks, `REFUND_PAYMENT` audit enum migration `20261025000001`), Phase 2 auth/session — **done** (refresh-token table `refresh_tokens` with rotation+reuse detection via migration `20261025000002`, httpOnly `salon_refresh` cookie, cookie-based axios refresh, `frontend/src/proxy.ts` server-side route gating), Phase 3 ops — **done** (email queue wired into all call sites with immediate nudge + cron retries, `SALON_TIMEZONE` on all crons, soft deletes for services/staff/coupons/users with anonymizing user delete, composite indexes + `users.refreshToken` drop in migration `20261026000000`), Phase 4 frontend tests/a11y/SEO — **done** (Vitest + RTL suites for safeRedirect/useAuthStore/api interceptors/Navbar, Navbar dialog+menu aria/Escape, `role="alert"` error banners, animation keyframes, robots/sitemap/JSON-LD/per-route metadata, middleware→proxy rename), then Phase 5 product features. Prefer Phase 0/1 items when touching payments, bookings, or auth.

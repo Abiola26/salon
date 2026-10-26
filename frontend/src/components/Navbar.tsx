@@ -27,6 +27,19 @@ export default function Navbar() {
     setMounted(true);
   }, []);
 
+  // Escape closes the admin dropdown and the profile modal (a11y)
+  useEffect(() => {
+    if (!isProfileOpen && !isAdminDropdownOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsProfileOpen(false);
+        setIsAdminDropdownOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isProfileOpen, isAdminDropdownOpen]);
+
   const handleLogout = () => {
     // Revoke the session server-side (clears the httpOnly cookie too);
     // fire-and-forget — local logout always succeeds even if the network fails.
@@ -42,7 +55,7 @@ export default function Navbar() {
   const isLinkActive = (path: string) => pathname === path;
 
   return (
-    <nav className="sticky top-0 z-50 w-full glass-panel border-b border-dark-border">
+    <nav aria-label="Main" className="sticky top-0 z-50 w-full glass-panel border-b border-dark-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Logo */}
@@ -82,6 +95,8 @@ export default function Navbar() {
                   <div className="relative">
                     <button
                       onClick={() => setIsAdminDropdownOpen(!isAdminDropdownOpen)}
+                      aria-haspopup="menu"
+                      aria-expanded={isAdminDropdownOpen}
                       className={`flex items-center gap-1.5 transition duration-200 px-1 py-2 cursor-pointer font-medium text-sm ${
                         pathname.startsWith("/admin")
                           ? "text-primary border-b-2 border-primary"
@@ -93,39 +108,45 @@ export default function Navbar() {
                     </button>
 
                     {isAdminDropdownOpen && (
-                      <div className="absolute left-0 mt-2 w-52 rounded-xl bg-zinc-950/95 border border-zinc-900 shadow-2xl p-2 z-50 flex flex-col space-y-1 backdrop-blur-md">
+                      <div role="menu" aria-label="Admin sections" className="absolute left-0 mt-2 w-52 rounded-xl bg-zinc-950/95 border border-zinc-900 shadow-2xl p-2 z-50 flex flex-col space-y-1 backdrop-blur-md">
                         <Link
                           href="/admin"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           Analytics Dashboard
                         </Link>
                         <Link
                           href="/admin/appointments"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           Appointments List
                         </Link>
                         <Link
                           href="/admin/services"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           Services Catalog
                         </Link>
                         <Link
                           href="/admin/staff"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           Stylist Roster
                         </Link>
                         <Link
                           href="/admin/coupons"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           Promo Coupons
                         </Link>
                         <Link
                           href="/admin/users"
+                          role="menuitem"
                           className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
                         >
                           User Management
@@ -144,6 +165,8 @@ export default function Navbar() {
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => setIsProfileOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={isProfileOpen}
                   className="flex items-center gap-2 text-zinc-300 bg-zinc-900 hover:bg-zinc-850 px-3 py-1.5 rounded-full border border-zinc-800 text-sm cursor-pointer transition active:scale-95"
                   title="View Profile by ID"
                 >
@@ -304,10 +327,20 @@ export default function Navbar() {
 
       {/* Personal Profile Modal */}
       {isProfileOpen && user && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="glass-panel w-full max-w-sm rounded-2xl border border-zinc-900 p-6 space-y-6">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setIsProfileOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-modal-title"
+            className="glass-panel w-full max-w-sm rounded-2xl border border-zinc-900 p-6 space-y-6"
+          >
             <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-              <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+              <h2 id="profile-modal-title" className="text-lg font-extrabold text-white flex items-center gap-2">
                 <UserIcon className="h-5 w-5 text-primary" />
                 Personal Profile
               </h2>
