@@ -88,7 +88,7 @@ function LoginForm() {
         </div>
 
         {error && (
-          <div className="bg-red-950/40 border border-red-900/40 text-red-300 p-4 rounded-lg flex items-start gap-2.5 text-sm animate-shake">
+          <div role="alert" className="bg-red-950/40 border border-red-900/40 text-red-300 p-4 rounded-lg flex items-start gap-2.5 text-sm animate-shake">
             <AlertCircle className="h-5 w-5 shrink-0 text-red-400 mt-0.5" />
             <span>{error}</span>
           </div>

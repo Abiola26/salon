@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Route protection (Phase 2).
+ * Route protection (Phase 2; migrated to the Next 16 `proxy` convention).
  *
  * The refresh session lives in an httpOnly cookie (`salon_refresh`), so this
- * server-side middleware is the first place a navigation can know whether the
+ * server-side proxy is the first place a navigation can know whether the
  * browser has a session — something localStorage-based auth never could.
  *
  * This gates UI shells only; every API call is still authenticated by the
@@ -73,7 +73,7 @@ const verifySession = async (token: string): Promise<SessionClaims | null> => {
   }
 };
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get(REFRESH_COOKIE)?.value ?? null;
   const hasSecret = Boolean(process.env.JWT_REFRESH_SECRET);

@@ -141,3 +141,31 @@ button, a, [role="button"] {
   background: #2D0211;
   border-radius: 2px;
 }
+
+/* Keyframes referenced by error banners (login/register) and modals */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-zoomIn {
+  animation: zoomIn 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html, body {
+    scroll-behavior: auto;
+  }
+  .animate-shake,
+  .animate-zoomIn {
+    animation: none;
+  }
+}
