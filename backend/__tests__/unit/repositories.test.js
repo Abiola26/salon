@@ -11,6 +11,8 @@ const { prisma } = require('../../src/config/db');
 
 jest.mock('../../src/config/db', () => ({
   prisma: {
+    $executeRaw: jest.fn(),
+    $queryRaw: jest.fn(),
     user: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -141,7 +143,8 @@ describe('Repositories', () => {
       expect(prisma.coupon.findMany).toHaveBeenCalled();
       expect(prisma.coupon.count).toHaveBeenCalled();
       expect(prisma.coupon.create).toHaveBeenCalled();
-      expect(prisma.coupon.update).toHaveBeenCalledTimes(2);
+      expect(prisma.coupon.update).toHaveBeenCalledTimes(1);
+      expect(prisma.$executeRaw).toHaveBeenCalled(); // conditional incrementUsage
       expect(prisma.coupon.delete).toHaveBeenCalled();
     });
   });
@@ -239,7 +242,7 @@ describe('Repositories', () => {
       await appointmentRepository.update('a1', { appointmentTime: '10:00' });
       await appointmentRepository.delete('a1');
       
-      // Slot conflict checks
+      // Slot conflict checks (duration-aware, findMany-based)
       appointmentRepository.checkSlotConflict('2026-06-25', '10:00', 'a1', 'st1');
       appointmentRepository.checkSlotConflict('2026-06-25', '10:00', null, null);
       
@@ -248,12 +251,66 @@ describe('Repositories', () => {
       appointmentRepository.findBookedSlots('2026-06-25', null);
 
       expect(prisma.appointment.findUnique).toHaveBeenCalledTimes(2);
-      expect(prisma.appointment.findMany).toHaveBeenCalledTimes(4);
+      expect(prisma.appointment.findMany).toHaveBeenCalledTimes(6);
       expect(prisma.appointment.count).toHaveBeenCalled();
       expect(prisma.appointment.create).toHaveBeenCalled();
       expect(prisma.appointment.update).toHaveBeenCalled();
       expect(prisma.appointment.delete).toHaveBeenCalled();
-      expect(prisma.appointment.findFirst).toHaveBeenCalledTimes(2);
+      expect(prisma.appointment.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('checkSlotConflict returns the overlapping booking (duration-aware)', async () => {
+      // Request 10:30 for 30min [630,660) vs existing 10:00 for 60min [600,660) → overlap
+      prisma.appointment.findMany.mockResolvedValueOnce([
+        { appointmentTime: '10:00', service: { duration: 60 } },
+      ]);
+      const overlap = await appointmentRepository.checkSlotConflict('2026-06-25', '10:30', 'a1', 'st1', 30);
+      expect(overlap).toEqual(expect.objectContaining({ appointmentTime: '10:00' }));
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            appointmentDate: new Date('2026-06-25'),
+            status: { not: 'CANCELLED' },
+            staffId: 'st1',
+            id: { not: 'a1' },
+          }),
+        })
+      );
+    });
+
+    it('checkSlotConflict ignores adjacent, later, and missing-duration cases', async () => {
+      // Starts exactly when the request ends: [600,630) vs [630,660) → no overlap
+      prisma.appointment.findMany.mockResolvedValueOnce([
+        { appointmentTime: '10:00', service: { duration: 30 } },
+      ]);
+      const adjacent = await appointmentRepository.checkSlotConflict('2026-06-25', '10:30', null, null, 30);
+      expect(adjacent).toBeNull();
+
+      // Starts after the request ends: [660,690) vs [630,660) → no overlap
+      prisma.appointment.findMany.mockResolvedValueOnce([
+        { appointmentTime: '11:00', service: { duration: 30 } },
+      ]);
+      const later = await appointmentRepository.checkSlotConflict('2026-06-25', '10:30', null, null, 30);
+      expect(later).toBeNull();
+
+      // Ends before the request starts: [540,570) vs [600,630) → no overlap
+      prisma.appointment.findMany.mockResolvedValueOnce([
+        { appointmentTime: '09:00', service: { duration: 30 } },
+      ]);
+      const earlier = await appointmentRepository.checkSlotConflict('2026-06-25', '10:00', null, null, 30);
+      expect(earlier).toBeNull();
+
+      // Missing service duration → fallback to 1-minute ranges, same start conflicts
+      prisma.appointment.findMany.mockResolvedValueOnce([
+        { appointmentTime: '10:00', service: null },
+      ]);
+      const fallback = await appointmentRepository.checkSlotConflict('2026-06-25', '10:00');
+      expect(fallback).toEqual(expect.objectContaining({ appointmentTime: '10:00' }));
+
+      // Empty candidate list
+      prisma.appointment.findMany.mockResolvedValueOnce([]);
+      const none = await appointmentRepository.checkSlotConflict('2026-06-25', '10:00', null, 'st1', 30);
+      expect(none).toBeNull();
     });
   });
 });

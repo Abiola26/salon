@@ -151,21 +151,54 @@ describe('paymentService', () => {
         amount: '30.00',
         userId: 'u1',
       });
-      appointmentRepository.findById.mockResolvedValue({
+      paymentRepository.processSucceeded.mockResolvedValue({
         id: 'a1',
-        amountPaid: '0.00',
+        paymentStatus: 'PARTIAL',
+        status: 'CONFIRMED',
         service: { price: '100.00' },
       });
-      paymentRepository.updateByStripeIntentId.mockResolvedValue({});
-      appointmentRepository.update.mockResolvedValue({});
       userRepository.findById.mockResolvedValue({});
       emailUtils.sendPaymentConfirmationEmail.mockResolvedValue({});
 
       const result = await paymentService.handleWebhook('body', 'sig');
       expect(result).toEqual({ received: true });
-      expect(paymentRepository.updateByStripeIntentId).toHaveBeenCalledWith('pi_123', {
+      expect(paymentRepository.processSucceeded).toHaveBeenCalledWith('pi_123', 'a1', '30.00');
+    });
+
+    it('ignores duplicate payment succeeded deliveries (idempotent)', async () => {
+      stripe.webhooks.constructEvent.mockReturnValue({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_123' } },
+      });
+      paymentRepository.findByStripeIntentId.mockResolvedValue({
+        id: 'p1',
+        appointmentId: 'a1',
+        amount: '30.00',
+        userId: 'u1',
         status: 'SUCCEEDED',
       });
+      // Duplicate → transaction CAS loses → null, no side effects
+      paymentRepository.processSucceeded.mockResolvedValue(null);
+
+      const result = await paymentService.handleWebhook('body', 'sig');
+
+      expect(result).toEqual({ received: true });
+      expect(emailUtils.sendPaymentConfirmationEmail).not.toHaveBeenCalled();
+      expect(paymentRepository.updateByStripeIntentId).not.toHaveBeenCalled();
+    });
+
+    it('skips succeeded handling when payment record is missing', async () => {
+      stripe.webhooks.constructEvent.mockReturnValue({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_missing' } },
+      });
+      paymentRepository.findByStripeIntentId.mockResolvedValue(null);
+
+      const result = await paymentService.handleWebhook('body', 'sig');
+
+      expect(result).toEqual({ received: true });
+      expect(paymentRepository.processSucceeded).not.toHaveBeenCalled();
+      expect(emailUtils.sendPaymentConfirmationEmail).not.toHaveBeenCalled();
     });
 
     it('handles payment failed event', async () => {
@@ -173,12 +206,22 @@ describe('paymentService', () => {
         type: 'payment_intent.payment_failed',
         data: { object: { id: 'pi_123' } },
       });
-      paymentRepository.updateByStripeIntentId.mockResolvedValue({});
+      paymentRepository.claimFailed.mockResolvedValue({ count: 1 });
 
       await paymentService.handleWebhook('body', 'sig');
-      expect(paymentRepository.updateByStripeIntentId).toHaveBeenCalledWith('pi_123', {
-        status: 'FAILED',
+      expect(paymentRepository.claimFailed).toHaveBeenCalledWith('pi_123');
+    });
+
+    it('ignores payment failed event for already-terminal payment', async () => {
+      stripe.webhooks.constructEvent.mockReturnValue({
+        type: 'payment_intent.payment_failed',
+        data: { object: { id: 'pi_123' } },
       });
+      paymentRepository.claimFailed.mockResolvedValue({ count: 0 });
+
+      await paymentService.handleWebhook('body', 'sig');
+      expect(paymentRepository.claimFailed).toHaveBeenCalledWith('pi_123');
+      expect(paymentRepository.updateByStripeIntentId).not.toHaveBeenCalled();
     });
 
     it('handles charge refunded event', async () => {
@@ -186,12 +229,10 @@ describe('paymentService', () => {
         type: 'charge.refunded',
         data: { object: { payment_intent: 'pi_123' } },
       });
-      paymentRepository.updateByStripeIntentId.mockResolvedValue({});
+      paymentRepository.claimRefunded.mockResolvedValue({ count: 1 });
 
       await paymentService.handleWebhook('body', 'sig');
-      expect(paymentRepository.updateByStripeIntentId).toHaveBeenCalledWith('pi_123', {
-        status: 'REFUNDED',
-      });
+      expect(paymentRepository.claimRefunded).toHaveBeenCalledWith('pi_123');
     });
   });
 

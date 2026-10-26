@@ -24,11 +24,18 @@ const couponRepository = {
   update: (id, data) =>
     prisma.coupon.update({ where: { id }, data }),
 
-  incrementUsage: (id) =>
-    prisma.coupon.update({
-      where: { id },
-      data: { usageCount: { increment: 1 } },
-    }),
+  /**
+   * Atomically claim one usage of the coupon. Returns the number of rows
+   * updated (0 when the usage limit was reached or the coupon is gone).
+   * Pass `db` (a transaction client) when called inside prisma.$transaction.
+   */
+  incrementUsage: (id, db = prisma) =>
+    db.$executeRaw`
+      UPDATE coupons
+      SET "usageCount" = "usageCount" + 1, "updatedAt" = NOW()
+      WHERE id = ${id}
+        AND ("maxUsage" IS NULL OR "usageCount" < "maxUsage")
+    `,
 
   delete: (id) => prisma.coupon.delete({ where: { id } }),
 };

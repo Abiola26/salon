@@ -14,17 +14,22 @@ jest.mock('../../src/repositories/appointment.repository');
 jest.mock('../../src/repositories/service.repository');
 jest.mock('../../src/repositories/staff.repository');
 jest.mock('../../src/repositories/coupon.repository');
-jest.mock('../../src/config/db', () => ({
-  prisma: {
+jest.mock('../../src/config/db', () => {
+  const prisma = {
     user: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     appointment: {
       update: jest.fn(),
     },
-  },
-}));
+    // Plain functions survive jest.resetAllMocks() in beforeEach
+    $executeRaw: async () => 1,
+    $transaction: async (fn) => fn(prisma),
+  };
+  return { prisma };
+});
 jest.mock('../../src/utils/email');
 jest.mock('../../src/utils/audit');
 
@@ -91,7 +96,7 @@ describe('appointmentService', () => {
     it('throws when slot is already booked', async () => {
       serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
       staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
-      appointmentRepository.checkSlotConflict.mockResolvedValue(true);
+      appointmentRepository.checkSlotConflict.mockResolvedValue({ appointmentTime: '10:00' });
 
       await expect(
         appointmentService.createAppointment('u1', {
@@ -106,7 +111,7 @@ describe('appointmentService', () => {
     it('creates appointment successfully with valid coupon percentage', async () => {
       serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
       staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
-      appointmentRepository.checkSlotConflict.mockResolvedValue(false);
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       couponRepository.findByCode.mockResolvedValue({
         id: 'c1',
         isActive: true,
@@ -115,7 +120,7 @@ describe('appointmentService', () => {
         usageCount: 0,
         maxUsage: null,
       });
-      couponRepository.incrementUsage.mockResolvedValue({});
+      couponRepository.incrementUsage.mockResolvedValue(1);
       appointmentRepository.create.mockResolvedValue({
         id: 'a1',
         user: { email: 'u1@example.com' },
@@ -130,20 +135,73 @@ describe('appointmentService', () => {
         couponCode: 'SAVE20',
       });
 
-      expect(couponRepository.incrementUsage).toHaveBeenCalledWith('c1');
+      expect(couponRepository.incrementUsage).toHaveBeenCalledWith('c1', expect.anything());
       expect(appointmentRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           discountAmount: 20, // 20% of 100
+        }),
+        expect.anything()
+      );
+    });
+
+    it('throws when the coupon usage limit is reached inside the transaction', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
+      couponRepository.findByCode.mockResolvedValue({
+        id: 'c1',
+        isActive: true,
+        discountType: 'PERCENTAGE',
+        discountValue: '20',
+        usageCount: 0,
+        maxUsage: 1,
+      });
+      couponRepository.incrementUsage.mockResolvedValue(0); // lost the race for the last usage
+
+      await expect(
+        appointmentService.createAppointment('u1', {
+          serviceId: 's1',
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+          staffId: 'st1',
+          couponCode: 'SAVE20',
         })
+      ).rejects.toThrow('no longer available');
+      expect(appointmentRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('auto-assigns the first free stylist when none is selected', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findByServiceId.mockResolvedValue([{ id: 'st1' }, { id: 'st2' }]);
+      appointmentRepository.checkSlotConflict
+        .mockResolvedValueOnce({ appointmentTime: '10:00' }) // st1 busy
+        .mockResolvedValueOnce(null); // st2 free — picked by auto-assign
+      // final conflict check falls through to the default mock (undefined → no conflict)
+      appointmentRepository.create.mockResolvedValue({
+        id: 'a1',
+        user: { email: 'u1@example.com' },
+        service: { name: 'Cut' },
+      });
+
+      const result = await appointmentService.createAppointment('u1', {
+        serviceId: 's1',
+        appointmentDate: '2026-06-29',
+        appointmentTime: '10:00',
+        notes: 'please arrive 10 min early',
+      });
+
+      expect(appointmentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ staffId: 'st2', notes: 'please arrive 10 min early' }),
+        expect.anything()
       );
     });
 
     it('creates appointment successfully redeeming loyalty points', async () => {
       serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
       staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
-      appointmentRepository.checkSlotConflict.mockResolvedValue(false);
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       prisma.user.findUnique.mockResolvedValue({ loyaltyPoints: 30 }); // 30 points = $30 discount
-      prisma.user.update.mockResolvedValue({});
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
       appointmentRepository.create.mockResolvedValue({
         id: 'a1',
         user: { email: 'u1@example.com' },
@@ -158,11 +216,49 @@ describe('appointmentService', () => {
         redeemPoints: true,
       });
 
-      expect(prisma.user.update).toHaveBeenCalledWith(
+      expect(prisma.user.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
+          where: expect.objectContaining({ id: 'u1', loyaltyPoints: { gte: 30 } }),
           data: { loyaltyPoints: { decrement: 30 } },
         })
       );
+    });
+
+    it('throws when loyalty points balance changed before the guarded decrement', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({ loyaltyPoints: 30 });
+      prisma.user.updateMany.mockResolvedValue({ count: 0 }); // balance no longer sufficient
+
+      await expect(
+        appointmentService.createAppointment('u1', {
+          serviceId: 's1',
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+          staffId: 'st1',
+          redeemPoints: true,
+        })
+      ).rejects.toThrow('no longer have enough loyalty points');
+      expect(appointmentRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('throws when the guarded points decrement returns no result', async () => {
+      serviceRepository.findById.mockResolvedValue({ id: 's1', isActive: true, duration: 30, price: '100.00' });
+      staffRepository.findById.mockResolvedValue({ id: 'st1', isActive: true, services: [{ id: 's1' }] });
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({ loyaltyPoints: 30 });
+      prisma.user.updateMany.mockResolvedValue(undefined);
+
+      await expect(
+        appointmentService.createAppointment('u1', {
+          serviceId: 's1',
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+          staffId: 'st1',
+          redeemPoints: true,
+        })
+      ).rejects.toThrow('no longer have enough loyalty points');
     });
   });
 
@@ -238,9 +334,9 @@ describe('appointmentService', () => {
     });
 
     it('reschedules appointment successfully', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1' });
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
       serviceRepository.findById.mockResolvedValue({ duration: 30 });
-      appointmentRepository.checkSlotConflict.mockResolvedValue(false);
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       appointmentRepository.update.mockResolvedValue({ id: 'a1' });
 
       const result = await appointmentService.rescheduleAppointment('a1', 'u1', 'CUSTOMER', {
@@ -251,7 +347,43 @@ describe('appointmentService', () => {
       expect(appointmentRepository.update).toHaveBeenCalledWith('a1', expect.objectContaining({
         appointmentTime: '10:00',
         status: 'PENDING',
-      }));
+      }), expect.anything());
+    });
+
+    it('reschedules when the service record is missing (duration treated as 0)', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 'gone', staffId: 'st1' });
+      serviceRepository.findById.mockResolvedValue(null); // service deleted → skip hours check
+      appointmentRepository.checkSlotConflict.mockResolvedValue(null);
+      appointmentRepository.update.mockResolvedValue({ id: 'a1' });
+
+      await appointmentService.rescheduleAppointment('a1', 'u1', 'CUSTOMER', {
+        appointmentDate: '2026-06-29',
+        appointmentTime: '10:00',
+        notes: 'call on arrival',
+      });
+
+      expect(appointmentRepository.checkSlotConflict).toHaveBeenCalledWith(
+        '2026-06-29', '10:00', 'a1', 'st1', 0, expect.anything()
+      );
+      expect(appointmentRepository.update).toHaveBeenCalledWith(
+        'a1',
+        expect.objectContaining({ notes: 'call on arrival' }),
+        expect.anything()
+      );
+    });
+
+    it('throws when the new slot overlaps an existing booking', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
+      serviceRepository.findById.mockResolvedValue({ duration: 30 });
+      appointmentRepository.checkSlotConflict.mockResolvedValue({ appointmentTime: '10:15' });
+
+      await expect(
+        appointmentService.rescheduleAppointment('a1', 'u1', 'CUSTOMER', {
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+        })
+      ).rejects.toThrow('already booked');
+      expect(appointmentRepository.update).not.toHaveBeenCalled();
     });
   });
 

@@ -33,6 +33,11 @@ const envSchema = z.object({
 
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
   BACKEND_URL: z.string().url().optional(),
+  // Extra CORS origins (comma-separated, exact match) e.g. https://my-app.vercel.app
+  ALLOWED_ORIGINS: z.string().optional(),
+  // Wildcard *.vercel.app / *.onrender.com origins. Keep "true" only until
+  // the exact frontend origin is set in ALLOWED_ORIGINS, then set "false".
+  CORS_ALLOW_WILDCARD: z.string().default('true'),
 
   RATE_LIMIT_WINDOW_MS: z.string().default(String(15 * 60 * 1000)),
   RATE_LIMIT_MAX: z.string().default('100'),
@@ -81,6 +86,11 @@ module.exports = {
 
   CLIENT_URL: env.CLIENT_URL,
   BACKEND_URL: env.BACKEND_URL || null,
+  ALLOWED_ORIGINS: (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  CORS_ALLOW_WILDCARD: env.CORS_ALLOW_WILDCARD === 'true',
 
   RATE_LIMIT: {
     WINDOW_MS: Number(env.RATE_LIMIT_WINDOW_MS),

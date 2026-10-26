@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { safeRedirect } from "@/lib/safeRedirect";
 import { Scissors, Loader2, AlertCircle } from "lucide-react";
 
 const loginSchema = z.object({
@@ -27,8 +28,8 @@ function LoginForm() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      const redirectUrl = searchParams.get("redirect") || (user.role === "ADMIN" ? "/admin" : "/dashboard");
-      router.push(redirectUrl);
+      const fallback = user.role === "ADMIN" ? "/admin" : "/dashboard";
+      router.push(safeRedirect(searchParams.get("redirect"), fallback));
     }
   }, [user, router, searchParams]);
 
@@ -55,9 +56,9 @@ function LoginForm() {
       // Save to Zustand store
       setAuth(loggedInUser, accessToken, refreshToken);
 
-      // Redirect user
-      const redirectUrl = searchParams.get("redirect") || (loggedInUser.role === "ADMIN" ? "/admin" : "/dashboard");
-      router.push(redirectUrl);
+      // Redirect user (validated same-site path only)
+      const fallback = loggedInUser.role === "ADMIN" ? "/admin" : "/dashboard";
+      router.push(safeRedirect(searchParams.get("redirect"), fallback));
     } catch (err) {
       setError(
         getApiErrorMessage(err, "Invalid email or password. Please try again.")
@@ -125,12 +126,6 @@ function LoginForm() {
               {errors.password && (
                 <p className="mt-1.5 text-xs text-red-400">{errors.password.message}</p>
               )}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between text-sm">
-            <div className="text-zinc-500 text-xs">
-              Demo Admin: <span className="text-primary">admin@salon.com / Admin@123456</span>
             </div>
           </div>
 
