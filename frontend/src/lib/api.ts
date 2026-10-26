@@ -105,22 +105,19 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = useAuthStore.getState().refreshToken;
-
-      if (!refreshToken) {
-        useAuthStore.getState().logout();
-        isRefreshing = false;
-        return Promise.reject(error);
-      }
-
       try {
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
-          refreshToken,
-        });
+        // Refresh token lives in an httpOnly cookie — sent automatically via
+        // the same-origin /api proxy. If the cookie is missing/rotated/revoked
+        // the request401s and we fall through to the catch below.
+        const response = await axios.post(
+          `${API_BASE_URL}/auth/refresh-token`,
+          {},
+          { withCredentials: true }
+        );
 
-        const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
+        const { accessToken: newAccessToken } = response.data.data;
 
-        useAuthStore.getState().updateTokens(newAccessToken, newRefreshToken);
+        useAuthStore.getState().updateTokens(newAccessToken);
 
         processQueue(null, newAccessToken);
         isRefreshing = false;
@@ -129,10 +126,13 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
+        const hadSession = Boolean(useAuthStore.getState().user);
         useAuthStore.getState().logout();
         isRefreshing = false;
 
-        if (typeof window !== "undefined") {
+        // Only bounce to /login when someone actually had a session — anonymous
+        // 401s on public pages shouldn't hijack navigation.
+        if (hadSession && typeof window !== "undefined") {
           window.location.href = "/login";
         }
         return Promise.reject(refreshError);

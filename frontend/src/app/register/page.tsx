@@ -59,10 +59,10 @@ function RegisterForm() {
 
     try {
       const response = await api.post("/auth/register", payload);
-      const { user: registeredUser, accessToken, refreshToken } = response.data.data;
+      const { user: registeredUser, accessToken } = response.data.data;
 
-      // Save credentials in Zustand
-      setAuth(registeredUser, accessToken, refreshToken);
+      // Save credentials in Zustand (refresh token already set as an httpOnly cookie)
+      setAuth(registeredUser, accessToken);
 
       // Redirect user (validated same-site path only)
       router.push(safeRedirect(searchParams.get("redirect"), "/dashboard"));

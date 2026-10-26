@@ -85,12 +85,12 @@ describe('authValidator', () => {
   });
 
   describe('refreshTokenSchema', () => {
-    it('validates with a refresh token', () => {
+    it('passes when refreshToken is present', () => {
       expect(refreshTokenSchema.safeParse({ refreshToken: 'tok' }).success).toBe(true);
     });
 
-    it('fails when refreshToken is missing', () => {
-      expect(refreshTokenSchema.safeParse({}).success).toBe(false);
+    it('allows a missing refreshToken (httpOnly cookie takes precedence)', () => {
+      expect(refreshTokenSchema.safeParse({}).success).toBe(true);
     });
   });
 

@@ -2,14 +2,46 @@
 
 const bcrypt = require('bcryptjs');
 const userRepository = require('../repositories/user.repository');
-const { generateAccessToken, generateRefreshToken, verifyRefreshToken, generateRandomToken, hashToken } = require('../utils/token');
+const refreshTokenRepository = require('../repositories/refreshToken.repository');
+const {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+  generateRandomToken,
+  hashToken,
+  parseDurationMs,
+} = require('../utils/token');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../utils/email');
 const ApiError = require('../utils/ApiError');
 const { auditLog } = require('../utils/audit');
-const { BCRYPT_SALT_ROUNDS } = require('../config/env');
+const { BCRYPT_SALT_ROUNDS, JWT } = require('../config/env');
+const logger = require('../config/logger');
+
+// Session lifetime mirrors JWT_REFRESH_EXPIRES_IN ('7d' by default).
+const REFRESH_TTL_MS = parseDurationMs(JWT.REFRESH_EXPIRES_IN, 7 * 24 * 60 * 60 * 1000);
+
+/**
+ * Issue an access+refresh token pair and persist the session (hash only).
+ * The raw refresh token goes to the client (httpOnly cookie / API body) and
+ * is never stored server-side.
+ */
+const issueSession = async (user, { ipAddress = null, userAgent = null } = {}) => {
+  const accessToken = generateAccessToken({ id: user.id, role: user.role });
+  const refreshToken = generateRefreshToken({ id: user.id, role: user.role });
+
+  await refreshTokenRepository.create({
+    userId: user.id,
+    tokenHash: hashToken(refreshToken),
+    userAgent,
+    ip: ipAddress,
+    expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+  });
+
+  return { accessToken, refreshToken };
+};
 
 const authService = {
-  async register(dto, ipAddress = null) {
+  async register(dto, ipAddress = null, userAgent = null) {
     const existing = await userRepository.findByEmail(dto.email);
     if (existing) throw ApiError.conflict('Email is already registered');
 
@@ -33,25 +65,19 @@ const authService = {
       ipAddress,
     });
 
-    const accessToken = generateAccessToken({ id: user.id, role: user.role });
-    const refreshToken = generateRefreshToken({ id: user.id, role: user.role });
+    const tokens = await issueSession(user, { ipAddress, userAgent });
 
-    await userRepository.update(user.id, { refreshToken });
-
-    return { user, accessToken, refreshToken };
+    return { user, ...tokens };
   },
 
-  async login(dto, ipAddress = null) {
+  async login(dto, ipAddress = null, userAgent = null) {
     const user = await userRepository.findByEmail(dto.email);
     if (!user) throw ApiError.unauthorized('Invalid email or password');
 
     const isMatch = await bcrypt.compare(dto.password, user.password);
     if (!isMatch) throw ApiError.unauthorized('Invalid email or password');
 
-    const accessToken = generateAccessToken({ id: user.id, role: user.role });
-    const refreshToken = generateRefreshToken({ id: user.id, role: user.role });
-
-    await userRepository.update(user.id, { refreshToken });
+    const tokens = await issueSession(user, { ipAddress, userAgent });
 
     await auditLog({
       userId: user.id,
@@ -63,10 +89,12 @@ const authService = {
     // eslint-disable-next-line no-unused-vars
     const { password, resetPasswordToken, resetPasswordExpiry, refreshToken: _, ...safeUser } = user;
 
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: safeUser, ...tokens };
   },
 
-  async refreshToken(token, ipAddress = null) {
+  async refreshToken(token, ipAddress = null, userAgent = null) {
+    if (!token) throw ApiError.unauthorized('Invalid or expired refresh token');
+
     let decoded;
     try {
       decoded = verifyRefreshToken(token);
@@ -74,15 +102,43 @@ const authService = {
       throw ApiError.unauthorized('Invalid or expired refresh token');
     }
 
-    const user = await userRepository.findByIdFull(decoded.id);
-    if (!user || user.refreshToken !== token) {
+    const tokenHash = hashToken(token);
+    const session = await refreshTokenRepository.findByHash(tokenHash);
+
+    if (!session || session.userId !== decoded.id || session.expiresAt < new Date()) {
       throw ApiError.unauthorized('Refresh token is invalid or has been revoked');
     }
 
-    const newAccessToken = generateAccessToken({ id: user.id, role: user.role });
+    if (session.revokedAt) {
+      // Replay of a rotated/revoked token ⇒ assume the token leaked and end
+      // every active session for this user (reuse detection).
+      await refreshTokenRepository.revokeAllForUser(session.userId);
+      logger.warn(
+        `Refresh-token reuse detected for user ${session.userId} — all sessions revoked`
+      );
+      throw ApiError.unauthorized('Refresh token is invalid or has been revoked');
+    }
+
+    const user = await userRepository.findByIdFull(session.userId);
+    if (!user) throw ApiError.unauthorized('Refresh token is invalid or has been revoked');
+
+    // Rotate: CAS-revoke the presented token first — a concurrent refresh that
+    // loses this race gets a clean 401 instead of issuing a duplicate session.
+    const rotated = await refreshTokenRepository.revokeById(session.id);
+    if (rotated.count === 0) {
+      throw ApiError.unauthorized('Refresh token is invalid or has been revoked');
+    }
+
+    const accessToken = generateAccessToken({ id: user.id, role: user.role });
     const newRefreshToken = generateRefreshToken({ id: user.id, role: user.role });
 
-    await userRepository.update(user.id, { refreshToken: newRefreshToken });
+    await refreshTokenRepository.create({
+      userId: user.id,
+      tokenHash: hashToken(newRefreshToken),
+      userAgent,
+      ip: ipAddress,
+      expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+    });
 
     await auditLog({
       userId: user.id,
@@ -91,12 +147,25 @@ const authService = {
       ipAddress,
     });
 
-    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    return { accessToken, refreshToken: newRefreshToken };
   },
 
-  async logout(userId, ipAddress = null) {
+  /**
+   * Revoke refresh sessions. With a token (cookie/body) only that session is
+   * ended; without one — or when the token no longer matches an active row —
+   * every session for the user is revoked so logout always takes effect.
+   */
+  async logout(userId, token = null, ipAddress = null) {
     const user = await userRepository.findByIdFull(userId);
-    await userRepository.update(userId, { refreshToken: null });
+
+    if (token) {
+      const revoked = await refreshTokenRepository.revokeByHash(hashToken(token));
+      if (revoked.count === 0) {
+        await refreshTokenRepository.revokeAllForUser(userId);
+      }
+    } else {
+      await refreshTokenRepository.revokeAllForUser(userId);
+    }
 
     await auditLog({
       userId,
@@ -150,8 +219,9 @@ const authService = {
       password: hashedPassword,
       resetPasswordToken: null,
       resetPasswordExpiry: null,
-      refreshToken: null,
     });
+    // Password reset ends every existing session.
+    await refreshTokenRepository.revokeAllForUser(user.id);
 
     await auditLog({
       userId: user.id,

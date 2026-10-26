@@ -3,21 +3,35 @@
 const bcrypt = require('bcryptjs');
 const authService = require('../../src/services/auth.service');
 const userRepository = require('../../src/repositories/user.repository');
+const refreshTokenRepository = require('../../src/repositories/refreshToken.repository');
 const emailUtils = require('../../src/utils/email');
 const tokenUtils = require('../../src/utils/token');
 const auditUtils = require('../../src/utils/audit');
+const logger = require('../../src/config/logger');
 const ApiError = require('../../src/utils/ApiError');
 
 jest.mock('../../src/repositories/user.repository');
+jest.mock('../../src/repositories/refreshToken.repository');
 jest.mock('../../src/utils/email');
-jest.mock('../../src/utils/token');
+// Keep parseDurationMs real (module-level REFRESH_TTL_MS depends on it),
+// mock everything else the service imports.
+jest.mock('../../src/utils/token', () => ({
+  ...jest.requireActual('../../src/utils/token'),
+  generateAccessToken: jest.fn(),
+  generateRefreshToken: jest.fn(),
+  verifyRefreshToken: jest.fn(),
+  generateRandomToken: jest.fn(),
+  hashToken: jest.fn(),
+}));
 jest.mock('../../src/utils/audit');
+jest.mock('../../src/config/logger');
 jest.mock('bcryptjs');
 
 describe('authService', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     auditUtils.auditLog.mockResolvedValue();
+    tokenUtils.hashToken.mockReturnValue('hashed-session-hash');
   });
 
   describe('register', () => {
@@ -37,7 +51,7 @@ describe('authService', () => {
       userRepository.create.mockResolvedValue({ id: '1', name: 'Test', email: 'test@example.com', role: 'CUSTOMER' });
       tokenUtils.generateAccessToken.mockReturnValue('access-token');
       tokenUtils.generateRefreshToken.mockReturnValue('refresh-token');
-      userRepository.update.mockResolvedValue({ id: '1', refreshToken: 'refresh-token' });
+      refreshTokenRepository.create.mockResolvedValue({});
       emailUtils.sendWelcomeEmail.mockResolvedValue();
 
       const result = await authService.register({
@@ -52,6 +66,15 @@ describe('authService', () => {
         refreshToken: 'refresh-token',
       });
       expect(userRepository.create).toHaveBeenCalledWith(expect.objectContaining({ email: 'test@example.com' }));
+      // Session lives in the refresh_tokens table (hash only) — never on users
+      expect(refreshTokenRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          tokenHash: 'hashed-session-hash',
+          expiresAt: expect.any(Date),
+        })
+      );
+      expect(userRepository.update).not.toHaveBeenCalled();
       expect(emailUtils.sendWelcomeEmail).toHaveBeenCalled();
       expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_REGISTERED' }));
     });
@@ -89,18 +112,29 @@ describe('authService', () => {
       bcrypt.compare.mockResolvedValue(true);
       tokenUtils.generateAccessToken.mockReturnValue('access-token');
       tokenUtils.generateRefreshToken.mockReturnValue('refresh-token');
-      userRepository.update.mockResolvedValue({ id: '1', refreshToken: 'refresh-token' });
+      refreshTokenRepository.create.mockResolvedValue({});
 
       const result = await authService.login({ email: 'test@example.com', password: 'correct' });
 
       expect(result.accessToken).toBe('access-token');
       expect(result.refreshToken).toBe('refresh-token');
       expect(result.user).toEqual(expect.objectContaining({ id: '1', email: 'test@example.com', role: 'CUSTOMER' }));
+      expect(refreshTokenRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: '1', tokenHash: 'hashed-session-hash' })
+      );
+      expect(userRepository.update).not.toHaveBeenCalled();
       expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_LOGIN' }));
     });
   });
 
   describe('refreshToken', () => {
+    const validSession = {
+      id: 'session-1',
+      userId: '1',
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+
     it('throws when refresh token is invalid', async () => {
       tokenUtils.verifyRefreshToken.mockImplementation(() => {
         throw new Error('invalid token');
@@ -109,40 +143,131 @@ describe('authService', () => {
       await expect(authService.refreshToken('bad-token')).rejects.toThrow(
         'Invalid or expired refresh token'
       );
+      expect(refreshTokenRepository.findByHash).not.toHaveBeenCalled();
     });
 
-    it('throws when refresh token does not match stored token', async () => {
+    it('throws when no session row matches the token', async () => {
       tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
-      userRepository.findByIdFull.mockResolvedValue({ id: '1', refreshToken: 'other-token' });
+      refreshTokenRepository.findByHash.mockResolvedValue(null);
+
+      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
+        'Refresh token is invalid or has been revoked'
+      );
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('throws when the session belongs to a different user than the JWT', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      refreshTokenRepository.findByHash.mockResolvedValue({ ...validSession, userId: 'someone-else' });
 
       await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
         'Refresh token is invalid or has been revoked'
       );
     });
 
-    it('rotates refresh token and returns new tokens on success', async () => {
+    it('throws when the session is expired', async () => {
       tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
-      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com', refreshToken: 'refresh-token' });
+      refreshTokenRepository.findByHash.mockResolvedValue({
+        ...validSession,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
+        'Refresh token is invalid or has been revoked'
+      );
+    });
+
+    it('detects replay of a rotated token: revokes ALL sessions and rejects', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      refreshTokenRepository.findByHash.mockResolvedValue({
+        ...validSession,
+        revokedAt: new Date(), // already rotated/revoked ⇒ someone replayed it
+      });
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue({ count: 3 });
+
+      await expect(authService.refreshToken('stolen-old-token')).rejects.toThrow(
+        'Refresh token is invalid or has been revoked'
+      );
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('1');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('reuse detected for user 1')
+      );
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('throws when the user no longer exists', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      refreshTokenRepository.findByHash.mockResolvedValue(validSession);
+      userRepository.findByIdFull.mockResolvedValue(null);
+
+      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
+        'Refresh token is invalid or has been revoked'
+      );
+    });
+
+    it('throws when a concurrent refresh already rotated the session (lost CAS race)', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      refreshTokenRepository.findByHash.mockResolvedValue(validSession);
+      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com', role: 'CUSTOMER' });
+      refreshTokenRepository.revokeById.mockResolvedValue({ count: 0 });
+
+      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
+        'Refresh token is invalid or has been revoked'
+      );
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('rotates the session and returns new tokens on success', async () => {
+      tokenUtils.verifyRefreshToken.mockReturnValue({ id: '1', role: 'CUSTOMER' });
+      refreshTokenRepository.findByHash.mockResolvedValue(validSession);
+      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com', role: 'CUSTOMER' });
+      refreshTokenRepository.revokeById.mockResolvedValue({ count: 1 });
       tokenUtils.generateAccessToken.mockReturnValue('new-access-token');
       tokenUtils.generateRefreshToken.mockReturnValue('new-refresh-token');
-      userRepository.update.mockResolvedValue({});
+      refreshTokenRepository.create.mockResolvedValue({});
 
-      const result = await authService.refreshToken('refresh-token', '127.0.0.1');
+      const result = await authService.refreshToken('refresh-token', '127.0.0.1', 'jest-agent');
 
       expect(result).toEqual({ accessToken: 'new-access-token', refreshToken: 'new-refresh-token' });
-      expect(userRepository.update).toHaveBeenCalledWith('1', { refreshToken: 'new-refresh-token' });
+      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith('session-1');
+      expect(refreshTokenRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          tokenHash: 'hashed-session-hash',
+          ip: '127.0.0.1',
+          userAgent: 'jest-agent',
+        })
+      );
       expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'TOKEN_REFRESHED' }));
+    });
+
+    it('rejects an empty token without touching the database', async () => {
+      await expect(authService.refreshToken(null)).rejects.toThrow('Invalid or expired refresh token');
+      expect(refreshTokenRepository.findByHash).not.toHaveBeenCalled();
     });
   });
 
   describe('logout', () => {
-    it('nullifies user refresh token on logout', async () => {
+    it('revokes only the presented session when its token is provided', async () => {
       userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com' });
-      userRepository.update.mockResolvedValue({});
+      refreshTokenRepository.revokeByHash.mockResolvedValue({ count: 1 });
 
-      await authService.logout('1', '127.0.0.1');
+      await authService.logout('1', 'current-token', '127.0.0.1');
 
-      expect(userRepository.update).toHaveBeenCalledWith('1', { refreshToken: null });
+      expect(refreshTokenRepository.revokeByHash).toHaveBeenCalledWith('hashed-session-hash');
+      expect(refreshTokenRepository.revokeAllForUser).not.toHaveBeenCalled();
+      expect(userRepository.update).not.toHaveBeenCalled();
+      expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_LOGOUT' }));
+    });
+
+    it('falls back to revoking ALL sessions when the token matches no active row', async () => {
+      userRepository.findByIdFull.mockResolvedValue({ id: '1', email: 'test@example.com' });
+      refreshTokenRepository.revokeByHash.mockResolvedValue({ count: 0 });
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue({ count: 2 });
+
+      await authService.logout('1', 'stale-token', '127.0.0.1');
+
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('1');
       expect(auditUtils.auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'USER_LOGOUT' }));
     });
   });
@@ -190,11 +315,12 @@ describe('authService', () => {
       );
     });
 
-    it('updates password and nullifies reset fields and refresh token on success', async () => {
+    it('updates password, nullifies reset fields, and revokes all sessions on success', async () => {
       tokenUtils.hashToken.mockReturnValue('hashed-token');
       userRepository.findByResetToken.mockResolvedValue({ id: '1', email: 'test@example.com' });
       bcrypt.hash.mockResolvedValue('hashedPassword');
       userRepository.update.mockResolvedValue({});
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue({ count: 1 });
 
       await authService.resetPassword('token', 'NewPass123!', '127.0.0.1');
 
@@ -203,8 +329,9 @@ describe('authService', () => {
         password: 'hashedPassword',
         resetPasswordToken: null,
         resetPasswordExpiry: null,
-        refreshToken: null,
       });
+      // Password reset must end every existing session
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('1');
       expect(auditUtils.auditLog).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PASSWORD_RESET_COMPLETED', userId: '1' })
       );
@@ -214,13 +341,13 @@ describe('authService', () => {
   // ─── logout ───────────────────────────────────────────────────────────────
 
   describe('logout', () => {
-    it('clears refreshToken and audits with user email when user is found', async () => {
+    it('audits with user email when user is found', async () => {
       userRepository.findByIdFull.mockResolvedValue({ id: 'u1', email: 'alice@example.com' });
-      userRepository.update.mockResolvedValue({});
+      refreshTokenRepository.revokeByHash.mockResolvedValue({ count: 1 });
 
-      await authService.logout('u1', '::1');
+      await authService.logout('u1', 'session-token', '::1');
 
-      expect(userRepository.update).toHaveBeenCalledWith('u1', { refreshToken: null });
+      expect(refreshTokenRepository.revokeByHash).toHaveBeenCalledWith('hashed-session-hash');
       // exercises the `user?.email` truthy branch
       expect(auditUtils.auditLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -233,9 +360,9 @@ describe('authService', () => {
     it('falls back to userId in audit details when user record is null (exercises || branch)', async () => {
       // user was deleted between JWT issuance and logout call
       userRepository.findByIdFull.mockResolvedValue(null);
-      userRepository.update.mockResolvedValue({});
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue({ count: 1 });
 
-      await authService.logout('ghost-id', '::1');
+      await authService.logout('ghost-id', null, '::1');
 
       expect(auditUtils.auditLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -254,9 +381,9 @@ describe('authService', () => {
   describe('default ipAddress = null branch coverage', () => {
     it('logout without ipAddress uses null default', async () => {
       userRepository.findByIdFull.mockResolvedValue({ id: 'u2', email: 'b@b.com' });
-      userRepository.update.mockResolvedValue({});
-      await authService.logout('u2'); // no ipAddress
-      expect(userRepository.update).toHaveBeenCalledWith('u2', { refreshToken: null });
+      refreshTokenRepository.revokeAllForUser.mockResolvedValue({ count: 1 });
+      await authService.logout('u2'); // no token, no ipAddress
+      expect(refreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('u2');
     });
 
     it('forgotPassword without ipAddress uses null default', async () => {

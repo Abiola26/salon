@@ -51,10 +51,10 @@ function LoginForm() {
 
     try {
       const response = await api.post("/auth/login", data);
-      const { user: loggedInUser, accessToken, refreshToken } = response.data.data;
+      const { user: loggedInUser, accessToken } = response.data.data;
 
-      // Save to Zustand store
-      setAuth(loggedInUser, accessToken, refreshToken);
+      // Save to Zustand store (refresh token already set as an httpOnly cookie)
+      setAuth(loggedInUser, accessToken);
 
       // Redirect user (validated same-site path only)
       const fallback = loggedInUser.role === "ADMIN" ? "/admin" : "/dashboard";

@@ -83,6 +83,8 @@ model User {
   password             String
   phone                String?
   role                 Role          @default(CUSTOMER)
+  // DEPRECATED (Phase 2): sessions now live in refresh_tokens table; kept to
+  // avoid a risky DROP COLUMN on drifted databases — remove in a cleanup phase.
   refreshToken         String?
   resetPasswordToken   String?
   resetPasswordExpiry  DateTime?
@@ -94,8 +96,30 @@ model User {
   payments             Payment[]
   auditLogs            AuditLog[]
   reviews              Review[]
+  refreshTokens        RefreshToken[]
 
   @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  // SHA-256 of the refresh JWT — the raw token is never stored server-side.
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  // Set when the session is revoked (logout, password reset) OR rotated by a
+  // refresh. Presenting a token that already has revokedAt ⇒ replay/leak ⇒
+  // every active session for that user gets revoked (reuse detection).
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 
 model Staff {
