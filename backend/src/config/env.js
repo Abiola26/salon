@@ -22,7 +22,12 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().nonempty(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
-  DEPOSIT_AMOUNT: z.string().default('30'),
+  DEPOSIT_AMOUNT: z
+    .string()
+    .default('30')
+    .refine((v) => Number.isFinite(Number(v)) && Number(v) > 0, {
+      message: 'DEPOSIT_AMOUNT must be a positive number (dollars)',
+    }),
 
   EMAIL_HOST: z.string().default('smtp.gmail.com'),
   EMAIL_PORT: z.string().default('587'),
