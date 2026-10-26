@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu, X, Scissors, User as UserIcon, LogOut, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { api } from "@/lib/api";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -27,6 +28,9 @@ export default function Navbar() {
   }, []);
 
   const handleLogout = () => {
+    // Revoke the session server-side (clears the httpOnly cookie too);
+    // fire-and-forget — local logout always succeeds even if the network fails.
+    api.post("/auth/logout").catch(() => {});
     logout();
     router.push("/");
     setIsOpen(false);

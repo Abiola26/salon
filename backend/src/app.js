@@ -6,6 +6,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const compression = require('compression');
 const hpp = require('hpp');
+const cookieParser = require('cookie-parser');
 
 require('express-async-errors');
 
@@ -125,6 +126,9 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// ─── Cookies (refresh session in httpOnly cookie, Phase 2) ───────────────────
+app.use(cookieParser());
 
 // ─── HTTP Parameter Pollution prevention ─────────────────────────────────────
 app.use(hpp());

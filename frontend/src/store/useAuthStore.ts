@@ -12,18 +12,17 @@ export interface User {
 interface AuthState {
   user: User | null;
   accessToken: string | null; // in-memory only, not persisted
-  refreshToken: string | null;
   isHydrated: boolean;
 }
 
 interface AuthActions {
-  setAuth: (user: User, accessToken: string, refreshToken: string) => void;
-  updateTokens: (accessToken: string, refreshToken: string) => void;
+  setAuth: (user: User, accessToken: string) => void;
+  updateTokens: (accessToken: string) => void;
   logout: () => void;
   setHydrated: () => void;
 }
 
-type PersistedState = Pick<AuthState, "user" | "refreshToken">;
+type PersistedState = Pick<AuthState, "user">;
 
 const noopStorage: Storage = {
   length: 0,
@@ -39,14 +38,12 @@ export const useAuthStore = create<AuthState & AuthActions>()(
     (set) => ({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isHydrated: false,
-      setAuth: (user, accessToken, refreshToken) =>
-        set({ user, accessToken, refreshToken }),
-      updateTokens: (accessToken, refreshToken) =>
-        set({ accessToken, refreshToken }),
-      logout: () =>
-        set({ user: null, accessToken: null, refreshToken: null }),
+      // Refresh token lives in an httpOnly cookie (Phase 2) — the client only
+      // stores the user profile; tokens never touch localStorage.
+      setAuth: (user, accessToken) => set({ user, accessToken }),
+      updateTokens: (accessToken) => set({ accessToken }),
+      logout: () => set({ user: null, accessToken: null }),
       setHydrated: () => set({ isHydrated: true }),
     }),
     {
@@ -56,7 +53,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       ),
       partialize: (state): PersistedState => ({
         user: state.user,
-        refreshToken: state.refreshToken,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated();

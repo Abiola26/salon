@@ -13,8 +13,13 @@ const mockRes = () => {
   res.status = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
   res.send = jest.fn().mockReturnValue(res);
+  res.cookie = jest.fn().mockReturnValue(res);
+  res.clearCookie = jest.fn().mockReturnValue(res);
   return res;
 };
+
+// Minimal express-compatible req.get for controller helpers (User-Agent etc.)
+const withGet = (req) => ({ ...req, get: (header) => (header === 'User-Agent' ? 'jest-agent' : null) });
 
 const mockNext = () => jest.fn();
 
@@ -34,16 +39,17 @@ describe('authController', () => {
   beforeEach(() => jest.clearAllMocks());
 
   describe('register', () => {
-    it('calls authService.register and returns 201', async () => {
+    it('calls authService.register, sets the refresh cookie, returns 201', async () => {
       const user = { id: 'u1', email: 'a@b.com' };
-      authService.register.mockResolvedValue(user);
-      const req = { body: { email: 'a@b.com', password: 'pw' }, ip: '::1' };
+      authService.register.mockResolvedValue({ ...user, accessToken: 'at', refreshToken: 'rt' });
+      const req = withGet({ body: { email: 'a@b.com', password: 'pw' }, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
       await callController(authController.register, req, res, next);
 
-      expect(authService.register).toHaveBeenCalledWith(req.body, req.ip);
+      expect(authService.register).toHaveBeenCalledWith(req.body, req.ip, 'jest-agent');
+      expect(res.cookie).toHaveBeenCalledWith('salon_refresh', 'rt', expect.objectContaining({ httpOnly: true }));
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true, message: 'Registration successful' })
@@ -53,7 +59,7 @@ describe('authController', () => {
     it('propagates service errors to next', async () => {
       const err = new Error('Email taken');
       authService.register.mockRejectedValue(err);
-      const req = { body: {}, ip: '::1' };
+      const req = withGet({ body: {}, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
@@ -64,22 +70,23 @@ describe('authController', () => {
   });
 
   describe('login', () => {
-    it('calls authService.login and returns 200', async () => {
+    it('calls authService.login, sets the refresh cookie, returns 200', async () => {
       const tokens = { accessToken: 'a', refreshToken: 'r' };
       authService.login.mockResolvedValue(tokens);
-      const req = { body: { email: 'a@b.com', password: 'pw' }, ip: '::1' };
+      const req = withGet({ body: { email: 'a@b.com', password: 'pw' }, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
       await callController(authController.login, req, res, next);
 
-      expect(authService.login).toHaveBeenCalledWith(req.body, req.ip);
+      expect(authService.login).toHaveBeenCalledWith(req.body, req.ip, 'jest-agent');
+      expect(res.cookie).toHaveBeenCalledWith('salon_refresh', 'r', expect.objectContaining({ httpOnly: true }));
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it('propagates errors to next', async () => {
       authService.login.mockRejectedValue(new Error('Bad creds'));
-      const req = { body: {}, ip: '::1' };
+      const req = withGet({ body: {}, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
@@ -89,21 +96,37 @@ describe('authController', () => {
   });
 
   describe('refreshToken', () => {
-    it('calls authService.refreshToken with token from body', async () => {
-      authService.refreshToken.mockResolvedValue({ accessToken: 'new' });
-      const req = { body: { refreshToken: 'rt' }, ip: '::1' };
+    it('calls authService.refreshToken with token from body, sets rotated cookie', async () => {
+      authService.refreshToken.mockResolvedValue({ accessToken: 'new', refreshToken: 'new-rt' });
+      const req = withGet({ body: { refreshToken: 'rt' }, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
       await callController(authController.refreshToken, req, res, next);
 
-      expect(authService.refreshToken).toHaveBeenCalledWith('rt', '::1');
+      expect(authService.refreshToken).toHaveBeenCalledWith('rt', '::1', 'jest-agent');
+      expect(res.cookie).toHaveBeenCalledWith('salon_refresh', 'new-rt', expect.objectContaining({ httpOnly: true }));
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('prefers the httpOnly cookie over the body token', async () => {
+      authService.refreshToken.mockResolvedValue({ accessToken: 'new', refreshToken: 'new-rt' });
+      const req = withGet({
+        body: {},
+        cookies: { salon_refresh: 'cookie-rt' },
+        ip: '::1',
+      });
+      const res = mockRes();
+      const next = mockNext();
+
+      await callController(authController.refreshToken, req, res, next);
+
+      expect(authService.refreshToken).toHaveBeenCalledWith('cookie-rt', '::1', 'jest-agent');
     });
 
     it('propagates errors to next', async () => {
       authService.refreshToken.mockRejectedValue(new Error('Invalid'));
-      const req = { body: { refreshToken: 'bad' }, ip: '::1' };
+      const req = withGet({ body: { refreshToken: 'bad' }, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
       await callController(authController.refreshToken, req, res, next);
@@ -112,16 +135,28 @@ describe('authController', () => {
   });
 
   describe('logout', () => {
-    it('calls authService.logout and returns 200', async () => {
+    it('calls authService.logout with cookie token and clears the cookie', async () => {
       authService.logout.mockResolvedValue(undefined);
-      const req = { user: { id: 'u1' }, ip: '::1' };
+      const req = withGet({ user: { id: 'u1' }, cookies: { salon_refresh: 'rt' }, ip: '::1' });
       const res = mockRes();
       const next = mockNext();
 
       await callController(authController.logout, req, res, next);
 
-      expect(authService.logout).toHaveBeenCalledWith('u1', '::1');
+      expect(authService.logout).toHaveBeenCalledWith('u1', 'rt', '::1');
+      expect(res.clearCookie).toHaveBeenCalledWith('salon_refresh', expect.objectContaining({ httpOnly: true }));
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('passes a null token when no cookie or body token exists', async () => {
+      authService.logout.mockResolvedValue(undefined);
+      const req = withGet({ user: { id: 'u1' }, ip: '::1' });
+      const res = mockRes();
+      const next = mockNext();
+
+      await callController(authController.logout, req, res, next);
+
+      expect(authService.logout).toHaveBeenCalledWith('u1', null, '::1');
     });
 
     it('propagates errors to next', async () => {

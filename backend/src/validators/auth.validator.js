@@ -32,7 +32,10 @@ const loginSchema = z.object({
 });
 
 const refreshTokenSchema = z.object({
-  refreshToken: z.string({ required_error: 'Refresh token is required' }),
+  // Optional: the refresh token normally arrives in the httpOnly cookie;
+  // the body is a fallback for API/Swagger clients. Missing from both → 401
+  // at the service layer (kept as a 4xx, not a validation error).
+  refreshToken: z.string().optional(),
 });
 
 const forgotPasswordSchema = z.object({

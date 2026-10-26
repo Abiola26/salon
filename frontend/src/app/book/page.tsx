@@ -64,7 +64,6 @@ interface CouponResult {
 interface AuthSession {
   user: AuthUser;
   accessToken: string;
-  refreshToken: string;
 }
 
 function BookingWizardContent() {
@@ -281,8 +280,8 @@ function BookingWizardContent() {
     onMutate: () => {
       setAuthError(null);
     },
-    onSuccess: ({ user: authedUser, accessToken, refreshToken }) => {
-      setAuth(authedUser, accessToken, refreshToken);
+    onSuccess: ({ user: authedUser, accessToken }) => {
+      setAuth(authedUser, accessToken);
     },
     onError: (error) => {
       setAuthError(
