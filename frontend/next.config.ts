@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
 const DEFAULT_API_URL = (process.env.NEXT_PUBLIC_API_URL || (isProd
-  ? "https://salon-ocwh.onrender.com/api"
+  ? "https://salon-be-cvi2.onrender.com/api-docs/"
   : "http://localhost:5000/api")).replace(/\/+$/, ""); // strip trailing slash
 
 const nextConfig: NextConfig = {
