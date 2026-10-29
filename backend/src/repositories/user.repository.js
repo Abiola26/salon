@@ -6,7 +6,7 @@ const userRepository = {
   findById: (id) =>
     prisma.user.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, createdAt: true, updatedAt: true },
+      select: { id: true, name: true, email: true, phoneNumber: true, role: true, loyaltyPoints: true, createdAt: true, updatedAt: true },
     }),
 
   findByIdFull: (id) => prisma.user.findFirst({ where: { id, deletedAt: null } }),
@@ -17,7 +17,7 @@ const userRepository = {
   findAll: ({ skip = 0, take = 20, role } = {}) =>
     prisma.user.findMany({
       where: { deletedAt: null, ...(role && { role }) },
-      select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, createdAt: true },
+      select: { id: true, name: true, email: true, phoneNumber: true, role: true, loyaltyPoints: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       skip,
       take,
@@ -28,14 +28,14 @@ const userRepository = {
   create: (data) =>
     prisma.user.create({
       data,
-      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, phoneNumber: true, role: true, createdAt: true },
     }),
 
   update: (id, data) =>
     prisma.user.update({
       where: { id },
       data,
-      select: { id: true, name: true, email: true, phone: true, role: true, updatedAt: true },
+      select: { id: true, name: true, email: true, phoneNumber: true, role: true, updatedAt: true },
     }),
 
   updateByEmail: (email, data) =>

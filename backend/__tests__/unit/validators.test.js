@@ -59,8 +59,8 @@ describe('authValidator', () => {
       expect(registerSchema.safeParse({ ...valid, password: 'PasswordAbc' }).success).toBe(false);
     });
 
-    it('allows optional phone', () => {
-      expect(registerSchema.safeParse({ ...valid, phone: '+1234567890' }).success).toBe(true);
+    it('allows optional phoneNumber', () => {
+      expect(registerSchema.safeParse({ ...valid, phoneNumber: '+1234567890' }).success).toBe(true);
     });
   });
 
@@ -147,12 +147,12 @@ describe('userValidator', () => {
       expect(updateProfileSchema.safeParse({}).success).toBe(true);
     });
 
-    it('validates name and phone', () => {
-      expect(updateProfileSchema.safeParse({ name: 'Bob', phone: '+123' }).success).toBe(true);
+    it('validates name and phoneNumber', () => {
+      expect(updateProfileSchema.safeParse({ name: 'Bob', phoneNumber: '+123' }).success).toBe(true);
     });
 
-    it('allows nullable phone', () => {
-      expect(updateProfileSchema.safeParse({ phone: null }).success).toBe(true);
+    it('allows nullable phoneNumber', () => {
+      expect(updateProfileSchema.safeParse({ phoneNumber: null }).success).toBe(true);
     });
 
     it('fails when name is too short', () => {

@@ -34,7 +34,7 @@ const authenticate = async (req, res, next) => {
         name: true,
         email: true,
         role: true,
-        phone: true,
+        phoneNumber: true,
       },
     });
 

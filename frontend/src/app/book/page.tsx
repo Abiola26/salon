@@ -101,7 +101,7 @@ function BookingWizardContent() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authName, setAuthName] = useState("");
-  const [authPhone, setAuthPhone] = useState("");
+  const [authPhoneNumber, setAuthPhoneNumber] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Booking process states
@@ -273,7 +273,7 @@ function BookingWizardContent() {
         name: authName,
         email: authEmail,
         password: authPassword,
-        phone: authPhone || undefined,
+        phoneNumber: authPhoneNumber || undefined,
       });
       return res.data.data;
     },
@@ -928,12 +928,12 @@ function BookingWizardContent() {
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                              Phone (Optional)
+                              Phone Number (Optional)
                             </label>
                             <input
                               type="tel"
-                              value={authPhone}
-                              onChange={(e) => setAuthPhone(e.target.value)}
+                              value={authPhoneNumber}
+                              onChange={(e) => setAuthPhoneNumber(e.target.value)}
                               placeholder="+1 (555) 000-0000"
                               className="w-full px-4 py-2.5 border border-zinc-800 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary"
                             />

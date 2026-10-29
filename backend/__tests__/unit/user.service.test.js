@@ -98,7 +98,7 @@ describe('userService', () => {
       expect(userRepository.softDelete).toHaveBeenCalledWith('1', expect.objectContaining({
         name: 'Deleted user',
         email: expect.stringContaining('@deleted.invalid'),
-        phone: null,
+        phoneNumber: null,
         resetPasswordToken: null,
         resetPasswordExpiry: null,
         loyaltyPoints: 0,
@@ -195,7 +195,7 @@ describe('userService', () => {
         loyaltyPoints: '100',
         name: 'New Name',
         email: 'new@example.com',
-        phone: '12345',
+        phoneNumber: '12345',
         unallowedField: 'hack',
       });
 
@@ -204,7 +204,7 @@ describe('userService', () => {
         loyaltyPoints: 100,
         name: 'New Name',
         email: 'new@example.com',
-        phone: '12345',
+        phoneNumber: '12345',
       });
     });
 
@@ -212,7 +212,7 @@ describe('userService', () => {
       userRepository.findById.mockResolvedValue({ id: '1' });
       userRepository.update.mockResolvedValue({ id: '1', name: 'Partial' });
 
-      // Only name is set; role, loyaltyPoints, email, phone are all undefined
+      // Only name is set; role, loyaltyPoints, email, phoneNumber are all undefined
       await userService.updateUser('1', { name: 'Partial' });
 
       expect(userRepository.update).toHaveBeenCalledWith('1', { name: 'Partial' });

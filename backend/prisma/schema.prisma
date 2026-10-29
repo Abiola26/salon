@@ -83,12 +83,12 @@ model User {
   name                 String
   email                String        @unique
   password             String
-  phone                String?
+  phoneNumber          String?
   role                 Role          @default(CUSTOMER)
   resetPasswordToken   String?
   resetPasswordExpiry  DateTime?
   loyaltyPoints        Int           @default(0)
-  // Soft delete (Phase 3): deletion anonymizes PII (name/email/phone/password)
+  // Soft delete (Phase 3): deletion anonymizes PII (name/email/phoneNumber/password)
   // instead of hard-deleting — appointments, payments, reviews and audit logs
   // all reference the user, and a hard delete would CASCADE them away.
   deletedAt            DateTime?

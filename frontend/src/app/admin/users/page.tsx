@@ -25,7 +25,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  phone: string | null;
+  phoneNumber: string | null;
   role: "ADMIN" | "CUSTOMER";
   loyaltyPoints: number;
   createdAt: string;
@@ -52,7 +52,7 @@ export default function UserManagementPage() {
   const [editPoints, setEditPoints] = useState(0);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editPhone, setEditPhone] = useState("");
+  const [editPhoneNumber, setEditPhoneNumber] = useState("");
 
   // Redirect if not admin
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function UserManagementPage() {
       setEditPoints(editUser.loyaltyPoints);
       setEditName(editUser.name);
       setEditEmail(editUser.email);
-      setEditPhone(editUser.phone || "");
+      setEditPhoneNumber(editUser.phoneNumber || "");
     }
   }, [editUser]);
 
@@ -122,7 +122,7 @@ export default function UserManagementPage() {
     return (
       u.name.toLowerCase().includes(searchLower) ||
       u.email.toLowerCase().includes(searchLower) ||
-      (u.phone && u.phone.includes(searchTerm))
+      (u.phoneNumber && u.phoneNumber.includes(searchTerm))
     );
   });
 
@@ -136,7 +136,7 @@ export default function UserManagementPage() {
         loyaltyPoints: editPoints,
         name: editName,
         email: editEmail,
-        phone: editPhone || null,
+        phoneNumber: editPhoneNumber || null,
       },
     });
   };
@@ -249,10 +249,10 @@ export default function UserManagementPage() {
                             <Mail className="h-3.5 w-3.5 text-zinc-500" />
                             <span>{u.email}</span>
                           </div>
-                          {u.phone && (
+                          {u.phoneNumber && (
                             <div className="flex items-center gap-2 text-xs text-zinc-400">
                               <Phone className="h-3.5 w-3.5 text-zinc-500" />
-                              <span>{u.phone}</span>
+                              <span>{u.phoneNumber}</span>
                             </div>
                           )}
                         </td>
@@ -400,15 +400,15 @@ export default function UserManagementPage() {
                 />
               </div>
 
-              {/* Phone */}
+              {/* Phone Number */}
               <div>
                 <label className="block text-xs font-semibold text-zinc-400 mb-1">
                   Phone Number
                 </label>
                 <input
                   type="text"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
+                  value={editPhoneNumber}
+                  onChange={(e) => setEditPhoneNumber(e.target.value)}
                   placeholder="e.g. +1 343 996 2448"
                   className="w-full px-4 py-2.5 border border-zinc-850 rounded-xl bg-zinc-950 text-white text-sm focus:outline-none focus:border-primary"
                 />
@@ -550,10 +550,10 @@ export default function UserManagementPage() {
                 <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{selectedUserProfile.email}</p>
               </div>
 
-              {selectedUserProfile.phone && (
+              {selectedUserProfile.phoneNumber && (
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Phone Number</span>
-                  <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{selectedUserProfile.phone}</p>
+                  <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{selectedUserProfile.phoneNumber}</p>
                 </div>
               )}
 

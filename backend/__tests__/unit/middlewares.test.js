@@ -182,7 +182,7 @@ describe('authenticate middleware', () => {
 
   it('attaches user to req and calls next() with no args on valid token', async () => {
     const token = generateAccessToken({ id: 'u1', role: 'ADMIN' });
-    const dbUser = { id: 'u1', name: 'Alice', email: 'a@b.com', role: 'ADMIN', phone: null };
+    const dbUser = { id: 'u1', name: 'Alice', email: 'a@b.com', role: 'ADMIN', phoneNumber: null };
     prisma.user.findUnique.mockResolvedValue(dbUser);
 
     const req = { headers: { authorization: `Bearer ${token}` } };

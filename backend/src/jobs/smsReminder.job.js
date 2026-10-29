@@ -74,7 +74,7 @@ async function runSmsReminderJob() {
         status: { in: ['PENDING', 'CONFIRMED'] },
       },
       include: {
-        user: { select: { id: true, name: true, phone: true } },
+        user: { select: { id: true, name: true, phoneNumber: true } },
         service: { select: { name: true } },
         staff: { select: { name: true } },
       },
@@ -95,7 +95,7 @@ async function runSmsReminderJob() {
         `2 hours (at ${appt.appointmentTime}). ` +
         'We look forward to seeing you! – The Salon Team';
 
-      await sendSms(appt.user.phone, message);
+      await sendSms(appt.user.phoneNumber, message);
     }
 
     logger.info(`⏰ [SMS Reminder Job] Done. Sent ${appointments.length} reminder(s).`);
