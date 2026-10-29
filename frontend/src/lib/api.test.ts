@@ -126,6 +126,61 @@ describe("api interceptors", () => {
     expect(useAuthStore.getState().accessToken).toBeNull();
   });
 
+  it("401 after a page reload (session in store, no access token) refreshes via cookie", async () => {
+    // Reload restores `user` from localStorage but the access token is
+    // memory-only — the first request goes out with no Authorization
+    // header and must recover through the httpOnly refresh cookie.
+    useAuthStore.setState({ user, accessToken: null });
+    const postSpy = vi
+      .spyOn(axios, "post")
+      .mockResolvedValue({ data: { data: { accessToken: "fresh-token" } } });
+
+    const rejected = (
+      api.interceptors.response as unknown as {
+        handlers: Array<{ rejected: (e: unknown) => Promise<unknown> }>;
+      }
+    ).handlers[0].rejected;
+
+    await rejected({
+      response: { status: 401 },
+      config: { url: "/analytics/dashboard", headers: {} },
+    }).catch(() => {});
+
+    expect(postSpy).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/refresh-token"),
+      {},
+      { withCredentials: true }
+    );
+    expect(useAuthStore.getState().accessToken).toBe("fresh-token");
+    expect(useAuthStore.getState().user).toEqual(user);
+  });
+
+  it("401 on a credential endpoint never refreshes, even with a stale session", async () => {
+    useAuthStore.setState({ user, accessToken: null });
+    const postSpy = vi.spyOn(axios, "post");
+    const loginError = asAxiosError({
+      response: { status: 401, data: { message: "Invalid email or password" } },
+    });
+
+    const rejected = (
+      api.interceptors.response as unknown as {
+        handlers: Array<{ rejected: (e: unknown) => Promise<unknown> }>;
+      }
+    ).handlers[0].rejected;
+
+    await expect(
+      rejected({
+        ...loginError,
+        config: { url: "/auth/login", headers: {} },
+      })
+    ).rejects.toMatchObject(loginError);
+
+    expect(postSpy).not.toHaveBeenCalled();
+    // The real credentials error surfaces — and the stale session is not
+    // torn down by a spurious refresh failure.
+    expect(useAuthStore.getState().user).toEqual(user);
+  });
+
   it("failed refresh logs the session out", async () => {
     useAuthStore.getState().setAuth(user, "stale-token");
     vi.spyOn(axios, "post").mockRejectedValue(new Error("refresh failed"));
