@@ -90,18 +90,24 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as RetryableRequestConfig | undefined;
-    // Only attempt a refresh when the failed request was actually
-    // authenticated (carried a Bearer token). A 401 on an anonymous
-    // request — e.g. wrong password on /auth/login — is a credentials
-    // error, not an expired token: pass it straight through so the
-    // caller sees the real message ("Invalid email or password") instead
-    // of a confusing refresh-token error.
+    // A 401 on a credential endpoint (login/register/…) means wrong
+    // email/password — never treat it as an expired session, or the
+    // refresh error would mask the real message in the UI.
+    const url = originalRequest?.url ?? "";
+    const isCredentialRequest = /\/auth\/(login|register|forgot-password|reset-password)/.test(url);
+    // Refresh when the request carried a Bearer token (expired access
+    // token) OR the store still believes there is a session. After a
+    // page reload the access token (memory-only) is gone but the httpOnly
+    // refresh cookie is not — the first request 401s and must recover
+    // silently instead of erroring the page.
     const wasAuthenticated = Boolean(originalRequest?.headers?.Authorization);
+    const hasSession = Boolean(useAuthStore.getState().user);
     if (
       error.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
-      wasAuthenticated
+      !isCredentialRequest &&
+      (wasAuthenticated || hasSession)
     ) {
       if (isRefreshing) {
         return new Promise<string | null>((resolve, reject) => {
