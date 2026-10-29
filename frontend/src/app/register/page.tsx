@@ -59,7 +59,11 @@ function RegisterForm() {
 
     try {
       const response = await api.post("/auth/register", payload);
-      const { user: registeredUser, accessToken } = response.data.data;
+      const authPayload = response.data?.data;
+      if (!authPayload?.user || !authPayload?.accessToken) {
+        throw new Error("Unexpected response from server. Please try again.");
+      }
+      const { user: registeredUser, accessToken } = authPayload;
 
       // Save credentials in Zustand (refresh token already set as an httpOnly cookie)
       setAuth(registeredUser, accessToken);
