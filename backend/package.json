@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
   "dev": "nodemon src/server.js",
-  "start": "npx prisma migrate deploy && node src/server.js",
+    "start": "npx prisma migrate deploy && npm run prisma:seed && node src/server.js",
   "build": "prisma generate",
   "test": "jest --forceExit",
   "test:unit": "jest --forceExit --runInBand __tests__/unit",
