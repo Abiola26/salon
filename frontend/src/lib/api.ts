@@ -90,7 +90,19 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as RetryableRequestConfig | undefined;
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    // Only attempt a refresh when the failed request was actually
+    // authenticated (carried a Bearer token). A 401 on an anonymous
+    // request — e.g. wrong password on /auth/login — is a credentials
+    // error, not an expired token: pass it straight through so the
+    // caller sees the real message ("Invalid email or password") instead
+    // of a confusing refresh-token error.
+    const wasAuthenticated = Boolean(originalRequest?.headers?.Authorization);
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      wasAuthenticated
+    ) {
       if (isRefreshing) {
         return new Promise<string | null>((resolve, reject) => {
           failedQueue.push({ resolve, reject });

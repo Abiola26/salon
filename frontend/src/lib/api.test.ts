@@ -90,7 +90,7 @@ describe("api interceptors", () => {
     // side effects above it are what this test asserts.
     await rejected({
       response: { status: 401 },
-      config: { url: "/appointments", headers: {} },
+      config: { url: "/appointments", headers: { Authorization: "Bearer stale-token" } },
     }).catch(() => {});
 
     expect(postSpy).toHaveBeenCalledWith(
@@ -101,8 +101,11 @@ describe("api interceptors", () => {
     expect(useAuthStore.getState().accessToken).toBe("fresh-token");
   });
 
-  it("401 with no session does not hijack navigation on failed refresh", async () => {
-    vi.spyOn(axios, "post").mockRejectedValue(new Error("no refresh cookie"));
+  it("401 on an anonymous request rejects with the original error, no refresh attempt", async () => {
+    const postSpy = vi.spyOn(axios, "post");
+    const loginError = asAxiosError({
+      response: { status: 401, data: { message: "Invalid email or password" } },
+    });
 
     const rejected = (
       api.interceptors.response as unknown as {
@@ -112,12 +115,12 @@ describe("api interceptors", () => {
 
     await expect(
       rejected({
-        response: { status: 401 },
-        config: { url: "/services", headers: {} },
+        ...loginError,
+        config: { url: "/auth/login", headers: {} },
       })
-    ).rejects.toThrow("no refresh cookie");
+    ).rejects.toMatchObject(loginError);
 
-    // Anonymous visitors stay on the page — no forced bounce to /login
+    expect(postSpy).not.toHaveBeenCalled();
     expect(window.location.href).not.toBe("/login");
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().accessToken).toBeNull();
@@ -136,7 +139,7 @@ describe("api interceptors", () => {
     await expect(
       rejected({
         response: { status: 401 },
-        config: { url: "/dashboard", headers: {} },
+        config: { url: "/dashboard", headers: { Authorization: "Bearer stale-token" } },
       })
     ).rejects.toThrow("refresh failed");
 
