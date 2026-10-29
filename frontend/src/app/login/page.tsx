@@ -51,7 +51,11 @@ function LoginForm() {
 
     try {
       const response = await api.post("/auth/login", data);
-      const { user: loggedInUser, accessToken } = response.data.data;
+      const payload = response.data?.data;
+      if (!payload?.user || !payload?.accessToken) {
+        throw new Error("Unexpected response from server. Please try again.");
+      }
+      const { user: loggedInUser, accessToken } = payload;
 
       // Save to Zustand store (refresh token already set as an httpOnly cookie)
       setAuth(loggedInUser, accessToken);
