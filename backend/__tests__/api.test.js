@@ -46,7 +46,7 @@ describe('Auth API', () => {
         name: 'Test Customer',
         email: uniqueEmail,
         password: 'TestPass123!',
-        phone: '+1234567890',
+        phoneNumber: '+1234567890',
       });
 
     expect(res.statusCode).toBe(201);

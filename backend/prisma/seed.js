@@ -41,7 +41,7 @@ async function main() {
       name: 'Salon Admin',
       email: adminEmail,
       password: passwordHash,
-      phone: '+1234567890',
+      phoneNumber: '+2349062380588',
       role: 'ADMIN',
     },
   });

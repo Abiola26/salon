@@ -381,10 +381,10 @@ export default function Navbar() {
                 <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{user.email}</p>
               </div>
 
-              {user.phone && (
+              {user.phoneNumber && (
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Phone Number</span>
-                  <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{user.phone}</p>
+                  <p className="font-semibold text-white bg-zinc-950/40 border border-zinc-950 px-3 py-2 rounded-xl">{user.phoneNumber}</p>
                 </div>
               )}
 

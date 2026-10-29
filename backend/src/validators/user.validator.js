@@ -4,7 +4,7 @@ const { z } = require('zod');
 
 const updateProfileSchema = z.object({
   name: z.string().min(2).max(100).optional(),
-  phone: z.string().optional().nullable(),
+  phoneNumber: z.string().optional().nullable(),
 });
 
 const changePasswordSchema = z

@@ -6,7 +6,7 @@ export interface User {
   readonly name: string;
   readonly email: string;
   readonly role: "ADMIN" | "CUSTOMER";
-  readonly phone?: string | null;
+  readonly phoneNumber?: string | null;
 }
 
 interface AuthState {

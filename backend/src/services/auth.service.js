@@ -51,7 +51,7 @@ const authService = {
       name: dto.name,
       email: dto.email,
       password: hashedPassword,
-      phone: dto.phone || null,
+      phoneNumber: dto.phoneNumber || null,
       role: 'CUSTOMER', // Always CUSTOMER — admins are promoted via PUT /api/users/:id
     });
 

@@ -32,7 +32,7 @@ interface Customer {
   id: string;
   name: string;
   email: string;
-  phone?: string | null;
+  phoneNumber?: string | null;
 }
 
 interface Appointment {
@@ -370,8 +370,8 @@ export default function AdminAppointmentsPage() {
                                   {appt.user.name}
                                 </span>
                                 <span className="text-[10px] text-zinc-500">{appt.user.email}</span>
-                                {appt.user.phone && (
-                                  <span className="text-[9px] text-zinc-500">{appt.user.phone}</span>
+                                {appt.user.phoneNumber && (
+                                  <span className="text-[9px] text-zinc-500">{appt.user.phoneNumber}</span>
                                 )}
                               </div>
                             </div>

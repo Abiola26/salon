@@ -15,7 +15,7 @@ const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   email: z.string().min(1, "Email is required").email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  phone: z.string().optional(),
+  phoneNumber: z.string().optional(),
 });
 
 type RegisterValues = z.infer<typeof registerSchema>;
@@ -44,7 +44,7 @@ function RegisterForm() {
       name: "",
       email: "",
       password: "",
-      phone: "",
+      phoneNumber: "",
     },
   });
 
@@ -54,7 +54,7 @@ function RegisterForm() {
 
     const payload = {
       ...data,
-      phone: data.phone === "" ? undefined : data.phone,
+      phoneNumber: data.phoneNumber === "" ? undefined : data.phoneNumber,
     };
 
     try {
@@ -143,18 +143,18 @@ function RegisterForm() {
             </div>
 
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-zinc-300 mb-1">
+              <label htmlFor="phoneNumber" className="block text-sm font-medium text-zinc-300 mb-1">
                 Phone Number (Optional)
               </label>
               <input
-                id="phone"
+                id="phoneNumber"
                 type="tel"
                 placeholder="+1 (555) 000-0000"
-                {...register("phone")}
+                {...register("phoneNumber")}
                 className="appearance-none block w-full px-4 py-3 border border-zinc-800 rounded-xl bg-zinc-900/60 placeholder-zinc-500 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition text-sm"
               />
-              {errors.phone && (
-                <p className="mt-1.5 text-xs text-red-400">{errors.phone.message}</p>
+              {errors.phoneNumber && (
+                <p className="mt-1.5 text-xs text-red-400">{errors.phoneNumber.message}</p>
               )}
             </div>
 

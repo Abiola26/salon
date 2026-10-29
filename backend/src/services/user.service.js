@@ -17,7 +17,7 @@ const anonymizeAndSoftDelete = async (user) => {
   await userRepository.softDelete(user.id, {
     name: 'Deleted user',
     email: `${user.id.slice(0, 8)}@deleted.invalid`,
-    phone: null,
+    phoneNumber: null,
     password: await bcrypt.hash(crypto.randomBytes(24).toString('hex'), BCRYPT_SALT_ROUNDS),
     resetPasswordToken: null,
     resetPasswordExpiry: null,
@@ -91,7 +91,7 @@ const userService = {
     if (dto.loyaltyPoints !== undefined) data.loyaltyPoints = parseInt(dto.loyaltyPoints) || 0;
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.email !== undefined) data.email = dto.email;
-    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.phoneNumber !== undefined) data.phoneNumber = dto.phoneNumber;
     
     return userRepository.update(id, data);
   },
