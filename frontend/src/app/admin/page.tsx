@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api } from "@/lib/api";
+import { parseLocalDate } from "@/lib/date";
 import {
   AreaChart,
   Area,
@@ -540,7 +541,7 @@ export default function AdminDashboardPage() {
                       <td className="py-3 pr-2">
                         <div className="flex flex-col">
                           <span className="text-zinc-300 font-semibold">
-                            {new Date(appt.appointmentDate).toLocaleDateString(undefined, {
+                            {parseLocalDate(appt.appointmentDate).toLocaleDateString(undefined, {
                               month: "short",
                               day: "numeric",
                             })}

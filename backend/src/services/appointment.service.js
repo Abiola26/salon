@@ -17,11 +17,11 @@ const {
   WORKING_HOURS,
 } = require('../config/workingHours');
 const { toCents } = require('../utils/money');
-
-// ── Loyalty points config ─────────────────────────────────────────────────────
-const POINTS_PER_DOLLAR_SPENT = 0.1;   // 1 point per $10 paid
-const POINTS_VALUE_IN_DOLLARS = 1.0;   // 1 point = $1.00 discount
-const MAX_POINTS_REDEMPTION_PCT = 0.5; // max 50% of price can be paid with points
+const {
+  POINTS_VALUE_IN_DOLLARS,
+  MAX_POINTS_REDEMPTION_PCT,
+  pointsForAmount,
+} = require('../config/loyalty');
 
 const appointmentService = {
   async createAppointment(userId, dto) {
@@ -183,7 +183,7 @@ const appointmentService = {
   async creditLoyaltyPoints(appointmentId, amountPaid) {
     const appointment = await appointmentRepository.findByIdRaw(appointmentId);
     if (!appointment) return;
-    const pointsEarned = Math.floor(parseFloat(amountPaid) * POINTS_PER_DOLLAR_SPENT);
+    const pointsEarned = pointsForAmount(amountPaid);
     if (pointsEarned > 0) {
       await prisma.user.update({
         where: { id: appointment.userId },
@@ -318,15 +318,38 @@ const appointmentService = {
       throw ApiError.badRequest('Cannot cancel a completed appointment');
     }
 
-    const cancelled = await appointmentRepository.update(id, { status: 'CANCELLED' });
-
-    // Refund loyalty points if they were redeemed
-    if (appointment.pointsRedeemed > 0) {
-      await prisma.user.update({
-        where: { id: appointment.userId },
-        data: { loyaltyPoints: { increment: appointment.pointsRedeemed } },
+    // Status flip, coupon-capacity release and points refund commit together:
+    // a crash mid-way can no longer leak coupon capacity or lose redeemed points.
+    const cancelled = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.appointment.updateMany({
+        where: { id, status: { in: ['PENDING', 'CONFIRMED'] } },
+        data: { status: 'CANCELLED' },
       });
-    }
+      if (claimed.count === 0) {
+        throw ApiError.badRequest('Appointment is already cancelled or completed');
+      }
+
+      if (appointment.couponId) {
+        await couponRepository.releaseUsage(appointment.couponId, tx);
+      }
+
+      // Refund loyalty points if they were redeemed
+      if (appointment.pointsRedeemed > 0) {
+        await tx.user.update({
+          where: { id: appointment.userId },
+          data: { loyaltyPoints: { increment: appointment.pointsRedeemed } },
+        });
+      }
+
+      return tx.appointment.findUnique({
+        where: { id },
+        include: {
+          service: true,
+          staff: { select: { id: true, name: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+    });
 
     // Fire-and-forget cancellation email
     sendCancellationEmail(appointment.user, appointment, appointment.service).catch(() => {});

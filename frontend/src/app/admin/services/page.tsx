@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   Scissors,
   Plus,
@@ -69,7 +70,7 @@ export default function AdminServicesPage() {
 
   // Fetch all services
   const { data: servicesResponse, isLoading, error } = useQuery({
-    queryKey: ["admin-services-list"],
+    queryKey: queryKeys.services.admin(),
     queryFn: async () => {
       const res = await api.get("/services");
       return res.data;
@@ -127,8 +128,7 @@ export default function AdminServicesPage() {
         // Create API
         await api.post("/services", data);
       }
-      queryClient.invalidateQueries({ queryKey: ["admin-services-list"] });
-      queryClient.invalidateQueries({ queryKey: ["services"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.services.all });
       setIsModalOpen(false);
       setEditingService(null);
     } catch (err: unknown) {
@@ -143,8 +143,7 @@ export default function AdminServicesPage() {
       await api.put(`/services/${service.id}`, {
         isActive: !service.isActive,
       });
-      queryClient.invalidateQueries({ queryKey: ["admin-services-list"] });
-      queryClient.invalidateQueries({ queryKey: ["services"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.services.all });
     } catch (err: unknown) {
       console.error(getApiErrorMessage(err, "Failed to update status."));
     } finally {
@@ -157,8 +156,7 @@ export default function AdminServicesPage() {
     setLoadingActionId(id);
     try {
       await api.delete(`/services/${id}`);
-      queryClient.invalidateQueries({ queryKey: ["admin-services-list"] });
-      queryClient.invalidateQueries({ queryKey: ["services"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.services.all });
     } catch (err: unknown) {
       console.error(getApiErrorMessage(err, "Failed to delete service."));
     } finally {

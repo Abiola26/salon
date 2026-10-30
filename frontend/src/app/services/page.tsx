@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import Link from "next/link";
 import { Scissors, Clock, DollarSign, Loader2, Sparkles, AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -24,7 +25,7 @@ export default function ServicesPage() {
   }, []);
 
   const { data: servicesResponse, isLoading, error } = useQuery({
-    queryKey: ["services-list"],
+    queryKey: queryKeys.services.list(),
     queryFn: async () => {
       const response = await api.get("/services");
       // Clean up response data mapping

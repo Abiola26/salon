@@ -43,6 +43,18 @@ const couponRepository = {
         AND ("maxUsage" IS NULL OR "usageCount" < "maxUsage")
     `,
 
+  /**
+   * Return one claimed usage (cancellation/refund path). Clamped at 0 so a
+   * duplicate release can never drive the counter negative.
+   * Pass `db` (a transaction client) when called inside prisma.$transaction.
+   */
+  releaseUsage: (id, db = prisma) =>
+    db.$executeRaw`
+      UPDATE coupons
+      SET "usageCount" = GREATEST("usageCount" - 1, 0), "updatedAt" = NOW()
+      WHERE id = ${id}
+    `,
+
   softDelete: (id, data = {}) =>
     prisma.coupon.update({
       where: { id },

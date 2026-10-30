@@ -38,6 +38,15 @@ describe('Auth API', () => {
     expect(res.body.success).toBe(true);
   });
 
+  it('GET /api/config — should expose public booking config', async () => {
+    const res = await request(app).get('/api/config');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.depositAmount).toBeGreaterThan(0);
+    expect(res.body.data.cancellationPolicy.freeCancelHours).toBe(48);
+    expect(Array.isArray(res.body.data.workingHours.openDays)).toBe(true);
+  });
+
   it('POST /api/auth/register — should create a new customer', async () => {
     const uniqueEmail = `testcustomer_${Date.now()}@example.com`;
     const res = await request(app)

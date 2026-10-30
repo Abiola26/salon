@@ -214,8 +214,8 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <Clock className="h-5 w-5 text-primary shrink-0" />
               <div>
-                <p>Mon - Fri: 9:00 AM - 8:00 PM</p>
-                <p>Sat: 9:00 AM - 6:00 PM | Sun: 10:00 AM - 4:00 PM</p>
+                <p>Mon - Sat: 9:00 AM - 6:00 PM</p>
+                <p>Sun: Closed</p>
               </div>
             </div>
           </div>

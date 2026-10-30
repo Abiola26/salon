@@ -12,6 +12,9 @@ const analyticsRoutes = require('./analytics.routes');
 const reviewRoutes = require('./review.routes');
 const staffRoutes = require('./staff.routes');
 const couponRoutes = require('./coupon.routes');
+const { DEPOSIT_AMOUNT, SALON_TIMEZONE } = require('../config/env');
+const { WORKING_HOURS } = require('../config/workingHours');
+const { CANCELLATION_POLICY } = require('../config/businessPolicy');
 
 // ─── Enhanced Health Check ────────────────────────────────────────────────────
 router.get('/health', async (req, res) => {
@@ -60,6 +63,20 @@ function formatUptime(seconds) {
   const s = Math.floor(seconds % 60);
   return [d && `${d}d`, h && `${h}h`, m && `${m}m`, `${s}s`].filter(Boolean).join(' ');
 }
+
+// ─── Public runtime config (deposit, hours, policy copy) ─────────────────────
+router.get('/config', (req, res) =>
+  res.json({
+    success: true,
+    data: {
+      depositAmount: Number(DEPOSIT_AMOUNT),
+      currency: 'cad',
+      timezone: SALON_TIMEZONE,
+      workingHours: WORKING_HOURS,
+      cancellationPolicy: CANCELLATION_POLICY,
+    },
+  })
+);
 
 // ─── Mount Routes ─────────────────────────────────────────────────────────────
 router.use('/auth', authRoutes);

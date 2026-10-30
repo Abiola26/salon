@@ -8,6 +8,8 @@ import { Elements } from "@stripe/react-stripe-js";
 import confetti from "canvas-confetti";
 import { useAuthStore, type User as AuthUser } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { formatLocalDate } from "@/lib/date";
+import { queryKeys } from "@/lib/queryKeys";
 import CheckoutForm from "@/components/CheckoutForm";
 import {
   Scissors,
@@ -109,16 +111,28 @@ function BookingWizardContent() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
-  const formatLocalDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+  // Deposit & policy copy come from the backend (single source of truth)
+  const { data: configResponse } = useQuery({
+    queryKey: queryKeys.config,
+    queryFn: async () => {
+      const res = await api.get("/config");
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const depositAmountConfig = Number(configResponse?.data?.depositAmount ?? 30);
+  const freeCancelHours = Number(
+    configResponse?.data?.cancellationPolicy?.freeCancelHours ?? 48
+  );
+  const depositLabel = `$${
+    depositAmountConfig % 1 === 0
+      ? depositAmountConfig
+      : depositAmountConfig.toFixed(2)
+  }`;
 
   // Fetch Services
   const { data: servicesResponse, isLoading: servicesLoading } = useQuery({
-    queryKey: ["services"],
+    queryKey: queryKeys.services.list(),
     queryFn: async () => {
       const res = await api.get("/services");
       return res.data;
@@ -206,8 +220,8 @@ function BookingWizardContent() {
       : 0;
   const totalDiscount = couponDiscount + loyaltyDiscount;
   const finalPrice = Math.max(0, servicePrice - totalDiscount);
-  const depositAmount = Math.min(30, finalPrice);
-  const amountToPay = paymentType === "DEPOSIT" ? depositAmount : finalPrice;
+  const deposit = Math.min(depositAmountConfig, finalPrice);
+  const amountToPay = paymentType === "DEPOSIT" ? deposit : finalPrice;
 
   const getNextDays = () => {
     const list = [];
@@ -769,9 +783,9 @@ function BookingWizardContent() {
                       </div>
                       {paymentType === "DEPOSIT" && (
                         <div className="flex justify-between text-zinc-500">
-                          <span>Due now ($30 deposit)</span>
+                          <span>Due now ({depositLabel} deposit)</span>
                           <span className="text-white">
-                            ${depositAmount.toFixed(2)}
+                            ${deposit.toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1024,11 +1038,11 @@ function BookingWizardContent() {
                               Deposit Only
                             </span>
                             <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-extrabold uppercase">
-                              $30 Deposit
+                              {depositLabel} Deposit
                             </span>
                           </div>
                           <span className="text-lg font-extrabold text-primary">
-                            ${depositAmount.toFixed(2)}
+                            ${deposit.toFixed(2)}
                           </span>
                           <span className="text-[10px] text-zinc-500">
                             Pay deposit now, settle remainder at salon.
@@ -1084,10 +1098,10 @@ function BookingWizardContent() {
                       </div>
                       <div className="text-xs text-zinc-400 leading-relaxed space-y-1.5">
                         <p>
-                          • <span className="text-white font-semibold">Deposit:</span> A $30 deposit is required to secure all appointments.
+                          • <span className="text-white font-semibold">Deposit:</span> A {depositLabel} deposit is required to secure all appointments.
                         </p>
                         <p>
-                          • <span className="text-white font-semibold">Cancellation:</span> Must cancel 48 hours in advance.
+                          • <span className="text-white font-semibold">Cancellation:</span> Must cancel {freeCancelHours} hours in advance.
                         </p>
                         <p>
                           • <span className="text-white font-semibold">Punctuality:</span> Arrive on time. A 16-minute grace period is allowed.{" "}
@@ -1326,7 +1340,7 @@ function BookingWizardContent() {
               <div className="bg-zinc-950/60 border border-zinc-800 rounded-xl p-4 space-y-2">
                 <h3 className="text-white font-bold text-xs uppercase tracking-wider">Deposit Policy</h3>
                 <p>
-                  A <span className="text-white font-semibold">$30 deposit</span> is required to secure all appointments. Your appointment is not confirmed until the deposit is received.
+                  A <span className="text-white font-semibold">{depositLabel} deposit</span> is required to secure all appointments. Your appointment is not confirmed until the deposit is received.
                 </p>
               </div>
 
@@ -1334,10 +1348,10 @@ function BookingWizardContent() {
               <div className="bg-red-950/20 border border-red-900/30 rounded-xl p-4 space-y-2">
                 <h3 className="text-red-400 font-bold text-xs uppercase tracking-wider">Cancellation Policy</h3>
                 <p>
-                  You must cancel or reschedule at least <span className="text-white font-semibold">48 hours in advance</span> of your scheduled appointment time.
+                  You must cancel or reschedule at least <span className="text-white font-semibold">{freeCancelHours} hours in advance</span> of your scheduled appointment time.
                 </p>
                 <p>
-                  Cancellations within 48 hours or failure to arrive for your session (<span className="text-white font-semibold">No-Shows</span>) will result in full forfeiture of the $30 deposit.
+                  Cancellations within {freeCancelHours} hours or failure to arrive for your session (<span className="text-white font-semibold">No-Shows</span>) will result in full forfeiture of the {depositLabel} deposit.
                 </p>
               </div>
 

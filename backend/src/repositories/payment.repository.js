@@ -2,6 +2,7 @@
 
 const { prisma } = require('../config/db');
 const { toCents, toDecimal2 } = require('../utils/money');
+const { pointsForAmount } = require('../config/loyalty');
 
 const paymentRepository = {
   findById: (id) =>
@@ -130,6 +131,9 @@ const paymentRepository = {
    * Full "payment refunded" processing in ONE transaction:
    * 1. CAS-claims the payment (SUCCEEDED → REFUNDED) — duplicates return null.
    * 2. Recomputes the appointment balance via applyRefundToAppointment.
+   * 3. Claws back the points this payment earned (per-payment floor, the same
+   *    formula creditLoyaltyPoints used). A spend-down balance is clamped at 0,
+   *    never negative.
    * Returns the updated appointment, or null when already processed.
    */
   processRefund: (stripePaymentIntentId) =>
@@ -143,7 +147,27 @@ const paymentRepository = {
       const payment = await tx.payment.findUnique({ where: { stripePaymentIntentId } });
       if (!payment) return null;
 
-      return paymentRepository.applyRefundToAppointment(payment.appointmentId, payment.amount, tx);
+      const appointment = await paymentRepository.applyRefundToAppointment(
+        payment.appointmentId,
+        payment.amount,
+        tx
+      );
+
+      const pointsToClaw = pointsForAmount(payment.amount);
+      if (pointsToClaw > 0 && appointment.userId) {
+        const clawed = await tx.user.updateMany({
+          where: { id: appointment.userId, loyaltyPoints: { gte: pointsToClaw } },
+          data: { loyaltyPoints: { decrement: pointsToClaw } },
+        });
+        if (clawed.count === 0) {
+          await tx.user.updateMany({
+            where: { id: appointment.userId, loyaltyPoints: { gt: 0 } },
+            data: { loyaltyPoints: 0 },
+          });
+        }
+      }
+
+      return appointment;
     }),
 
   getTotalRevenue: () =>

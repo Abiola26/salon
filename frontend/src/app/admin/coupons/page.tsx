@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { parseLocalDate } from "@/lib/date";
 import {
   Tag,
   Plus,
@@ -171,8 +172,12 @@ export default function AdminCouponsPage() {
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
-  const isExpired = (c: Coupon) =>
-    c.endDate && new Date(c.endDate) < new Date();
+  const isExpired = (c: Coupon) => {
+    if (!c.endDate) return false;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return parseLocalDate(c.endDate) < todayStart;
+  };
   const isExhausted = (c: Coupon) =>
     c.maxUsage !== null && c.usageCount >= c.maxUsage;
 
@@ -274,10 +279,10 @@ export default function AdminCouponsPage() {
                         </td>
                         <td className="px-6 py-4 text-xs text-zinc-400">
                           {c.startDate
-                            ? `${new Date(c.startDate).toLocaleDateString()} –`
+                            ? `${parseLocalDate(c.startDate).toLocaleDateString()} –`
                             : "Any start –"}
                           {c.endDate
-                            ? ` ${new Date(c.endDate).toLocaleDateString()}`
+                            ? ` ${parseLocalDate(c.endDate).toLocaleDateString()}`
                             : " No expiry"}
                         </td>
                         <td className="px-6 py-4 text-center">
