@@ -6,7 +6,7 @@ const userController = require('../controllers/user.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { adminOnly } = require('../middlewares/admin.middleware');
 const { validate } = require('../middlewares/validate.middleware');
-const { updateProfileSchema, changePasswordSchema } = require('../validators/user.validator');
+const { updateProfileSchema, changePasswordSchema, adminUpdateUserSchema } = require('../validators/user.validator');
 
 // ─── Authenticated User Routes ────────────────────────────────────────────────
 
@@ -66,6 +66,6 @@ router.get('/:id', authenticate, adminOnly, userController.getUserById);
  * @access  Admin
  */
 router.delete('/:id', authenticate, adminOnly, userController.deleteUser);
-router.put('/:id', authenticate, adminOnly, userController.updateUser);
+router.put('/:id', authenticate, adminOnly, validate(adminUpdateUserSchema), userController.updateUser);
 
 module.exports = router;

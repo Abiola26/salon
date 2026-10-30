@@ -200,4 +200,52 @@ describe('couponService', () => {
       expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE_COUPON' }));
     });
   });
+
+  describe('validateCoupon - integer-cent clamping', () => {
+    const baseCoupon = {
+      id: 'cx',
+      code: 'CLAMP',
+      isActive: true,
+      usageCount: 0,
+      maxUsage: null,
+      startDate: null,
+      endDate: null,
+    };
+
+    it('clamps a negative percentage discount to 0', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        ...baseCoupon,
+        discountType: 'PERCENTAGE',
+        discountValue: '-10',
+      });
+
+      const result = await couponService.validateCoupon('CLAMP', '100.00');
+
+      expect(result.discountAmount).toBe(0);
+    });
+
+    it('clamps a percentage above 100 to the service price', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        ...baseCoupon,
+        discountType: 'PERCENTAGE',
+        discountValue: '150',
+      });
+
+      const result = await couponService.validateCoupon('CLAMP', '40.00');
+
+      expect(result.discountAmount).toBe(40);
+    });
+
+    it('clamps a negative flat discount to 0', async () => {
+      couponRepository.findByCode.mockResolvedValue({
+        ...baseCoupon,
+        discountType: 'FLAT',
+        discountValue: '-15',
+      });
+
+      const result = await couponService.validateCoupon('CLAMP', '80.00');
+
+      expect(result.discountAmount).toBe(0);
+    });
+  });
 });

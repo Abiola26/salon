@@ -11,7 +11,7 @@ describe('errorMiddleware', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    req = { method: 'GET', path: '/test', originalUrl: '/test', body: {}, params: {}, query: {} };
+    req = { id: 'req-test-1', method: 'GET', path: '/test', originalUrl: '/test', body: {}, params: {}, query: {} };
     res = {
       json: jest.fn(),
     };
@@ -31,6 +31,7 @@ describe('errorMiddleware', () => {
           success: false,
           statusCode: 404,
           message: 'Custom Not Found',
+          requestId: 'req-test-1',
         })
       );
     });

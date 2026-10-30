@@ -10,12 +10,13 @@ const cookieParser = require('cookie-parser');
 
 require('express-async-errors');
 
-const { NODE_ENV, CLIENT_URL, BACKEND_URL, ALLOWED_ORIGINS, CORS_ALLOW_WILDCARD } = require('./config/env');
+const { NODE_ENV, CLIENT_URL, BACKEND_URL, ALLOWED_ORIGINS, CORS_ALLOW_WILDCARD, ENABLE_API_DOCS } = require('./config/env');
 const logger = require('./config/logger');
 const routes = require('./routes/index');
 const { globalLimiter } = require('./middlewares/rateLimiter.middleware');
 const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
 const performanceLogger = require('./middlewares/performance.middleware');
+const requestId = require('./middlewares/requestId.middleware');
 
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./config/swagger.json');
@@ -24,6 +25,9 @@ const app = express();
 
 // ─── Trust Proxy (for rate limiting behind reverse proxies) ──────────────────
 app.set('trust proxy', 1);
+
+// ─── Request correlation id (X-Request-Id) ──────────────────────────────────
+app.use(requestId);
 
 // ─── Security Headers ─────────────────────────────────────────────────────────
 app.use(
@@ -140,8 +144,11 @@ app.use(compression());
 if (NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
+  morgan.token('request-id', (req) => req.id);
+  const productionFormat =
+    ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" requestId=:request-id';
   app.use(
-    morgan('combined', {
+    morgan(productionFormat, {
       stream: { write: (message) => logger.info(message.trim()) },
       skip: (req) => req.url === '/api/health',
     })
@@ -155,26 +162,38 @@ app.use('/api', globalLimiter);
 app.use('/api', performanceLogger);
 
 // ─── API Docs ─────────────────────────────────────────────────────────────────
-const swaggerHandler = (req, res, next) => {
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  const dynamicDoc = {
-    ...swaggerDocument,
-    servers: [
-      { url: `${protocol}://${host}/api`, description: 'Current Server' },
-      { url: 'http://localhost:5000/api', description: 'Local Development' },
-    ],
+const docsEnabled = NODE_ENV !== 'production' || ENABLE_API_DOCS;
+if (docsEnabled) {
+  const swaggerHandler = (req, res, next) => {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const dynamicDoc = {
+      ...swaggerDocument,
+      servers: [
+        { url: `${protocol}://${host}/api`, description: 'Current Server' },
+        { url: 'http://localhost:5000/api', description: 'Local Development' },
+      ],
+    };
+    swaggerUi.setup(dynamicDoc)(req, res, next);
   };
-  swaggerUi.setup(dynamicDoc)(req, res, next);
-};
 
-app.use('/api-docs', swaggerUi.serve, swaggerHandler);
-app.use('/api/docs', swaggerUi.serve, swaggerHandler);
+  app.use('/api-docs', swaggerUi.serve, swaggerHandler);
+  app.use('/api/docs', swaggerUi.serve, swaggerHandler);
 
-// Redirects for alternative documentation URLs and root
-app.get(['/', '/docs', '/api/api-docs'], (req, res) => {
-  res.redirect('/api-docs');
-});
+  // Redirects for alternative documentation URLs and root
+  app.get(['/', '/docs', '/api/api-docs'], (req, res) => {
+    res.redirect('/api-docs');
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.json({
+      success: true,
+      name: 'Salon Booking API',
+      version: process.env.npm_package_version || '1.0.0',
+      docs: 'disabled',
+    });
+  });
+}
 
 // ─── API Routes (v1 canonical + /api alias) ───────────────────────────────────
 app.use('/api/v1', routes);

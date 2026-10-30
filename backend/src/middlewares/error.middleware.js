@@ -76,19 +76,21 @@ const errorHandler = (err, req, res, _next) => {
   // Log server errors (request body redacted — may contain passwords/tokens)
   if (statusCode >= 500) {
     logger.error(`[${req.method}] ${req.path} — ${statusCode}: ${err.message}`, {
+      requestId: req.id,
       stack: err.stack,
       body: redact(req.body),
       params: redact(req.params),
       query: redact(req.query),
     });
   } else {
-    logger.warn(`[${req.method}] ${req.path} — ${statusCode}: ${error.message}`);
+    logger.warn(`[${req.method}] ${req.path} — ${statusCode}: ${error.message} (requestId=${req.id})`);
   }
 
   const response = {
     success: false,
     statusCode,
     message: error.message,
+    requestId: req.id,
   };
 
   if (error.errors && error.errors.length > 0) {

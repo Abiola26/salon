@@ -3,6 +3,7 @@
 const couponRepository = require('../repositories/coupon.repository');
 const { auditLog } = require('../utils/audit');
 const ApiError = require('../utils/ApiError');
+const { toCents } = require('../utils/money');
 
 const couponService = {
   async validateCoupon(code, servicePrice) {
@@ -22,20 +23,24 @@ const couponService = {
       throw ApiError.badRequest('This coupon has reached its usage limit');
     }
 
-    // Calculate discount
-    let discountAmount = 0;
+    // Calculate discount in integer cents; clamp to a sane [0, price] range so
+    // legacy/negative discount rows can never increase the price.
+    const priceCents = Math.max(0, toCents(servicePrice));
+    let discountCents = 0;
     if (coupon.discountType === 'PERCENTAGE') {
-      discountAmount = (parseFloat(servicePrice) * parseFloat(coupon.discountValue)) / 100;
+      const percent = Math.min(100, Math.max(0, parseFloat(coupon.discountValue)));
+      discountCents = Math.round((priceCents * percent) / 100);
     } else {
-      discountAmount = Math.min(parseFloat(coupon.discountValue), parseFloat(servicePrice));
+      discountCents = Math.max(0, toCents(coupon.discountValue));
     }
+    discountCents = Math.min(discountCents, priceCents);
 
     return {
       couponId: coupon.id,
       code: coupon.code,
       discountType: coupon.discountType,
       discountValue: parseFloat(coupon.discountValue),
-      discountAmount: parseFloat(discountAmount.toFixed(2)),
+      discountAmount: discountCents / 100,
     };
   },
 

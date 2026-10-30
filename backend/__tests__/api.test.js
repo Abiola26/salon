@@ -23,6 +23,10 @@ let createdCouponCode = '';
 let createdReviewId = '';
 let leaveBookingId = '';
 
+// Must match how the admin was seeded (CI passes ADMIN_EMAIL/ADMIN_PASSWORD).
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@salon.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123456';
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
@@ -67,8 +71,8 @@ describe('Auth API', () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'admin@salon.com',
-        password: 'Admin@123456',
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
       });
 
     expect(res.statusCode).toBe(200);
@@ -79,7 +83,7 @@ describe('Auth API', () => {
   it('POST /api/auth/login — wrong password should return 401', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'admin@salon.com', password: 'wrongpassword' });
+      .send({ email: ADMIN_EMAIL, password: 'wrongpassword' });
 
     expect(res.statusCode).toBe(401);
     expect(res.body.success).toBe(false);
@@ -237,6 +241,16 @@ describe('Appointments API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.data.status).toBe('CANCELLED');
   });
+
+  it('PATCH /api/appointments/:id/confirm — rejects a cancelled appointment (400)', async () => {
+    if (!createdAppointmentId) return;
+    const res = await request(app)
+      .patch(`/api/appointments/${createdAppointmentId}/confirm`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toContain('cancelled');
+  });
 });
 
 // =============================================================================
@@ -272,6 +286,17 @@ describe('Users API', () => {
       .set('Authorization', `Bearer ${customerToken}`);
 
     expect(res.statusCode).toBe(403);
+  });
+
+  it('PUT /api/users/:id — rejects an invalid role with 422', async () => {
+    const res = await request(app)
+      .put('/api/users/00000000-0000-4000-8000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ role: 'SUPERADMIN', loyaltyPoints: -5 });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.message).toBe('Validation failed');
+    expect(res.body.errors.some((e) => e.field === 'role')).toBe(true);
   });
 });
 
@@ -313,6 +338,17 @@ describe('Staff API', () => {
     expect(res.statusCode).toBe(201);
     expect(res.body.data).toHaveProperty('id');
     createdStaffId = res.body.data.id;
+  });
+
+  it('POST /api/staff — rejects an invalid payload with 422', async () => {
+    const res = await request(app)
+      .post('/api/staff')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: '   ', serviceIds: ['not-a-uuid'] });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.message).toBe('Validation failed');
+    expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
   it('GET /api/staff — public should list staff', async () => {
@@ -507,6 +543,16 @@ describe('Coupons API', () => {
     expect(res.statusCode).toBe(201);
     expect(res.body.data).toHaveProperty('id');
     createdCouponId = res.body.data.id;
+  });
+
+  it('POST /api/coupons — rejects a percentage above 100 with 422', async () => {
+    const res = await request(app)
+      .post('/api/coupons')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ code: 'TOOBIG', discountType: 'PERCENTAGE', discountValue: 150 });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.errors.some((e) => e.field === 'discountValue')).toBe(true);
   });
 
   it('GET /api/coupons — admin should get all coupons', async () => {

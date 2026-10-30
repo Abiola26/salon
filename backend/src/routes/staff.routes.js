@@ -8,6 +8,7 @@ const { authenticate } = require('../middlewares/auth.middleware');
 const { adminOnly } = require('../middlewares/admin.middleware');
 const { validate } = require('../middlewares/validate.middleware');
 const { createLeaveSchema } = require('../validators/staffLeave.validator');
+const { createStaffSchema, updateStaffSchema } = require('../validators/staff.validator');
 
 /**
  * @route   GET /api/staff
@@ -63,14 +64,14 @@ router.get('/:id', staffController.getStaffById);
  * @desc    Create a new staff member
  * @access  Admin
  */
-router.post('/', authenticate, adminOnly, staffController.createStaff);
+router.post('/', authenticate, adminOnly, validate(createStaffSchema), staffController.createStaff);
 
 /**
  * @route   PUT /api/staff/:id
  * @desc    Update a staff member
  * @access  Admin
  */
-router.put('/:id', authenticate, adminOnly, staffController.updateStaff);
+router.put('/:id', authenticate, adminOnly, validate(updateStaffSchema), staffController.updateStaff);
 
 /**
  * @route   DELETE /api/staff/:id
