@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   Users,
   Plus,
@@ -98,7 +99,7 @@ export default function AdminStaffPage() {
 
   // Fetch services (for the multi-select)
   const { data: servicesResponse } = useQuery({
-    queryKey: ["services-list"],
+    queryKey: queryKeys.services.list(),
     queryFn: async () => {
       const res = await api.get("/services");
       return res.data;

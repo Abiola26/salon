@@ -83,16 +83,12 @@ export default function Footer() {
             </h3>
             <ul className="space-y-2 text-sm text-zinc-400">
               <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
-                <span>Monday - Friday</span>
-                <span className="text-zinc-300 text-xs sm:text-sm">9:00 AM - 8:00 PM</span>
-              </li>
-              <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
-                <span>Saturday</span>
+                <span>Monday - Saturday</span>
                 <span className="text-zinc-300 text-xs sm:text-sm">9:00 AM - 6:00 PM</span>
               </li>
               <li className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
                 <span>Sunday</span>
-                <span className="text-zinc-300 text-xs sm:text-sm">10:00 AM - 4:00 PM</span>
+                <span className="text-zinc-300 text-xs sm:text-sm">Closed</span>
               </li>
             </ul>
           </div>

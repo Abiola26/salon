@@ -25,6 +25,8 @@ jest.mock('../../src/config/db', () => {
     },
     appointment: {
       update: jest.fn(),
+      updateMany: jest.fn(),
+      findUnique: jest.fn(),
     },
     // Plain functions survive jest.resetAllMocks() in beforeEach
     $executeRaw: async () => 1,
@@ -462,22 +464,46 @@ describe('appointmentService', () => {
         userId: 'u1',
         status: 'CONFIRMED',
         pointsRedeemed: 30,
+        couponId: 'c1',
         user: {},
         service: {},
       });
-      appointmentRepository.update.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
       prisma.user.update.mockResolvedValue({});
       emailUtils.sendCancellationEmail.mockResolvedValue({});
       auditLog.mockResolvedValue({});
 
       const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
 
+      expect(prisma.appointment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'a1', status: { in: ['PENDING', 'CONFIRMED'] } },
+        data: { status: 'CANCELLED' },
+      });
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: { loyaltyPoints: { increment: 30 } },
         })
       );
-      expect(appointmentRepository.update).toHaveBeenCalledWith('a1', { status: 'CANCELLED' });
+      expect(couponRepository.releaseUsage).toHaveBeenCalledWith('c1', prisma);
+      expect(result).toEqual({ id: 'a1', status: 'CANCELLED' });
+    });
+
+    it('rejects when a concurrent request already changed the status', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        id: 'a1',
+        userId: 'u1',
+        status: 'PENDING',
+        pointsRedeemed: 0,
+        user: {},
+        service: {},
+      });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')
+      ).rejects.toThrow('already cancelled or completed');
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 

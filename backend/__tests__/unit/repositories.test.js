@@ -10,8 +10,8 @@ const reviewRepository = require('../../src/repositories/review.repository');
 const appointmentRepository = require('../../src/repositories/appointment.repository');
 const { prisma } = require('../../src/config/db');
 
-jest.mock('../../src/config/db', () => ({
-  prisma: {
+jest.mock('../../src/config/db', () => {
+  const prisma = {
     $executeRaw: jest.fn(),
     $queryRaw: jest.fn(),
     user: {
@@ -20,6 +20,7 @@ jest.mock('../../src/config/db', () => ({
       count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
       findFirst: jest.fn(),
     },
@@ -38,6 +39,7 @@ jest.mock('../../src/config/db', () => ({
       count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       aggregate: jest.fn(),
     },
     service: {
@@ -80,8 +82,11 @@ jest.mock('../../src/config/db', () => ({
       create: jest.fn(),
       delete: jest.fn(),
     },
-  },
-}));
+    // Plain function: survives jest.resetAllMocks() in beforeEach
+    $transaction: async (fn) => fn(prisma),
+  };
+  return { prisma };
+});
 
 describe('Repositories', () => {
   beforeEach(() => {
@@ -149,7 +154,7 @@ describe('Repositories', () => {
   });
 
   describe('couponRepository', () => {
-    it('calls findByCode, findById, findAll, count, create, update, incrementUsage, softDelete', async () => {
+    it('calls findByCode, findById, findAll, count, create, update, incrementUsage, releaseUsage, softDelete', async () => {
       await couponRepository.findByCode('SAVE10');
       await couponRepository.findById('c1');
       await couponRepository.findAll();
@@ -157,6 +162,7 @@ describe('Repositories', () => {
       await couponRepository.create({ code: 'CODE' });
       await couponRepository.update('c1', { code: 'CODE' });
       await couponRepository.incrementUsage('c1');
+      await couponRepository.releaseUsage('c1');
       await couponRepository.softDelete('c1', { code: 'CODE (deleted c1)' });
 
       expect(prisma.coupon.findFirst).toHaveBeenCalledTimes(2);
@@ -164,7 +170,7 @@ describe('Repositories', () => {
       expect(prisma.coupon.count).toHaveBeenCalledWith({ where: { deletedAt: null } });
       expect(prisma.coupon.create).toHaveBeenCalled();
       expect(prisma.coupon.update).toHaveBeenCalledTimes(2);
-      expect(prisma.$executeRaw).toHaveBeenCalled(); // conditional incrementUsage
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(2); // increment + release
     });
   });
 
@@ -187,6 +193,62 @@ describe('Repositories', () => {
       expect(prisma.payment.create).toHaveBeenCalled();
       expect(prisma.payment.update).toHaveBeenCalledTimes(2);
       expect(prisma.payment.aggregate).toHaveBeenCalled();
+    });
+
+    describe('processRefund', () => {
+      it('refunds, recomputes the balance and claws back earned points', async () => {
+        prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+        prisma.payment.findUnique.mockResolvedValue({
+          id: 'p1',
+          appointmentId: 'a1',
+          amount: 30,
+          status: 'SUCCEEDED',
+        });
+        prisma.appointment.update
+          .mockResolvedValueOnce({ amountPaid: 0, discountAmount: 0, service: { price: 30 } })
+          .mockResolvedValueOnce({ id: 'a1', userId: 'u1', amountPaid: 0, paymentStatus: 'UNPAID' });
+        prisma.user.updateMany.mockResolvedValue({ count: 1 });
+
+        const result = await paymentRepository.processRefund('pi_123');
+
+        expect(result).toEqual(expect.objectContaining({ id: 'a1', paymentStatus: 'UNPAID' }));
+        expect(prisma.user.updateMany).toHaveBeenCalledWith({
+          where: { id: 'u1', loyaltyPoints: { gte: 3 } },
+          data: { loyaltyPoints: { decrement: 3 } },
+        });
+      });
+
+      it('clamps the clawback at zero when points were already spent', async () => {
+        prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+        prisma.payment.findUnique.mockResolvedValue({
+          id: 'p1',
+          appointmentId: 'a1',
+          amount: 30,
+          status: 'SUCCEEDED',
+        });
+        prisma.appointment.update
+          .mockResolvedValueOnce({ amountPaid: 0, discountAmount: 0, service: { price: 30 } })
+          .mockResolvedValueOnce({ id: 'a1', userId: 'u1', amountPaid: 0, paymentStatus: 'UNPAID' });
+        prisma.user.updateMany
+          .mockResolvedValueOnce({ count: 0 })
+          .mockResolvedValueOnce({ count: 1 });
+
+        await paymentRepository.processRefund('pi_123');
+
+        expect(prisma.user.updateMany).toHaveBeenLastCalledWith({
+          where: { id: 'u1', loyaltyPoints: { gt: 0 } },
+          data: { loyaltyPoints: 0 },
+        });
+      });
+
+      it('returns null when the payment was already refunded (no double clawback)', async () => {
+        prisma.payment.updateMany.mockResolvedValue({ count: 0 });
+
+        const result = await paymentRepository.processRefund('pi_123');
+
+        expect(result).toBeNull();
+        expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      });
     });
   });
 

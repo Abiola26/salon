@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { parseLocalDate } from "@/lib/date";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -398,7 +399,7 @@ export default function AdminAppointmentsPage() {
                               <div className="flex items-center gap-1 text-zinc-300">
                                 <CalendarIcon className="h-3.5 w-3.5 text-primary opacity-60" />
                                 <span className="font-semibold">
-                                  {new Date(appt.appointmentDate).toLocaleDateString(undefined, {
+                                  {parseLocalDate(appt.appointmentDate).toLocaleDateString(undefined, {
                                     month: "short",
                                     day: "numeric",
                                     year: "numeric",
@@ -490,7 +491,7 @@ export default function AdminAppointmentsPage() {
                                   <button
                                     onClick={() => {
                                       setReschedulingAppt(appt);
-                                      setRescheduleDate(new Date(appt.appointmentDate));
+                                      setRescheduleDate(parseLocalDate(appt.appointmentDate));
                                     }}
                                     className="h-8 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-bold transition text-[10px] cursor-pointer"
                                     title="Reschedule"

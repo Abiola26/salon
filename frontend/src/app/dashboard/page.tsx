@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { formatLocalDate, parseLocalDate } from "@/lib/date";
+import { queryKeys } from "@/lib/queryKeys";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import CheckoutForm from "@/components/CheckoutForm";
@@ -87,13 +89,24 @@ export default function CustomerDashboardPage() {
   const [reviewComment, setReviewComment] = useState<string>("");
   const [reviewError, setReviewError] = useState<string | null>(null);
 
-  // Local helper to format Date to YYYY-MM-DD
-  const formatLocalDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+  // Fetch public config (deposit + cancellation policy copy)
+  const { data: configResponse } = useQuery({
+    queryKey: queryKeys.config,
+    queryFn: async () => {
+      const res = await api.get("/config");
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const depositAmountConfig = Number(configResponse?.data?.depositAmount ?? 30);
+  const freeCancelHours = Number(
+    configResponse?.data?.cancellationPolicy?.freeCancelHours ?? 48
+  );
+  const depositLabel = `$${
+    depositAmountConfig % 1 === 0
+      ? depositAmountConfig
+      : depositAmountConfig.toFixed(2)
+  }`;
 
   const getDayName = (date: Date) =>
     date.toLocaleDateString("en-US", { weekday: "short" });
@@ -201,24 +214,24 @@ export default function CustomerDashboardPage() {
 
     const upcoming = allAppointments.filter((appt) => {
       if (appt.status === "CANCELLED") return false;
-      const apptDate = new Date(appt.appointmentDate);
+      const apptDate = parseLocalDate(appt.appointmentDate);
       return apptDate >= now && appt.status !== "COMPLETED";
     });
 
     const past = allAppointments.filter((appt) => {
-      const apptDate = new Date(appt.appointmentDate);
+      const apptDate = parseLocalDate(appt.appointmentDate);
       return apptDate < now || appt.status === "CANCELLED" || appt.status === "COMPLETED";
     });
 
     // Sort upcoming ascending, past descending
     upcoming.sort((a, b) => {
-      const dateDiff = new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime();
+      const dateDiff = parseLocalDate(a.appointmentDate).getTime() - parseLocalDate(b.appointmentDate).getTime();
       if (dateDiff !== 0) return dateDiff;
       return a.appointmentTime.localeCompare(b.appointmentTime);
     });
 
     past.sort((a, b) => {
-      const dateDiff = new Date(b.appointmentDate).getTime() - new Date(a.appointmentDate).getTime();
+      const dateDiff = parseLocalDate(b.appointmentDate).getTime() - parseLocalDate(a.appointmentDate).getTime();
       if (dateDiff !== 0) return dateDiff;
       return b.appointmentTime.localeCompare(a.appointmentTime);
     });
@@ -528,7 +541,7 @@ export default function CustomerDashboardPage() {
                     <div className="flex items-center gap-2 text-sm text-zinc-400">
                       <CalendarIcon className="h-4 w-4 text-primary shrink-0" />
                       <span className="font-semibold">
-                        {new Date(appt.appointmentDate).toLocaleDateString("en-US", {
+                        {parseLocalDate(appt.appointmentDate).toLocaleDateString("en-US", {
                           weekday: "short",
                           month: "short",
                           day: "numeric",
@@ -618,7 +631,7 @@ export default function CustomerDashboardPage() {
                         <button
                           onClick={() => {
                             setReschedulingAppt(appt);
-                            setRescheduleDate(new Date(appt.appointmentDate));
+                            setRescheduleDate(parseLocalDate(appt.appointmentDate));
                             setRescheduleTime(null);
                           }}
                           className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -711,14 +724,14 @@ export default function CustomerDashboardPage() {
                   <p className="text-xs text-zinc-400">
                     Are you certain you wish to cancel your reservation for{" "}
                     <strong className="text-zinc-200">{cancellingAppt.service.name}</strong> on{" "}
-                    {new Date(cancellingAppt.appointmentDate).toLocaleDateString("en-US")} at{" "}
+                    {parseLocalDate(cancellingAppt.appointmentDate).toLocaleDateString("en-US")} at{" "}
                     {cancellingAppt.appointmentTime}?
                   </p>
                 </div>
               </div>
 
               <div className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-900/80 text-[11px] text-zinc-500 leading-relaxed">
-                ⚠️ <strong>Cancellation Policy:</strong> Cancellations must be made at least 48 hours in advance of the appointment. Late cancellations or no-shows forfeit the $30 deposit.
+                ⚠️ <strong>Cancellation Policy:</strong> Cancellations must be made at least {freeCancelHours} hours in advance of the appointment. Late cancellations or no-shows forfeit the {depositLabel} deposit.
               </div>
 
               {cancelError && (
