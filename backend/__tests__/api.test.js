@@ -23,6 +23,10 @@ let createdCouponCode = '';
 let createdReviewId = '';
 let leaveBookingId = '';
 
+// Must match how the admin was seeded (CI passes ADMIN_EMAIL/ADMIN_PASSWORD).
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@salon.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123456';
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
@@ -67,8 +71,8 @@ describe('Auth API', () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'admin@salon.com',
-        password: 'Admin@123456',
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
       });
 
     expect(res.statusCode).toBe(200);
@@ -79,7 +83,7 @@ describe('Auth API', () => {
   it('POST /api/auth/login — wrong password should return 401', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'admin@salon.com', password: 'wrongpassword' });
+      .send({ email: ADMIN_EMAIL, password: 'wrongpassword' });
 
     expect(res.statusCode).toBe(401);
     expect(res.body.success).toBe(false);

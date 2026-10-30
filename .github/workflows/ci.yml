@@ -25,7 +25,7 @@ jobs:
           --health-retries 10
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/salon_test?schema=public
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/salon_test?schema=public"
       JWT_ACCESS_SECRET: ci_access_secret_for_tests_only
       JWT_REFRESH_SECRET: ci_refresh_secret_for_tests_only
       STRIPE_SECRET_KEY: sk_test_ci_dummy
@@ -49,6 +49,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Apply migrations
         run: npx prisma migrate deploy
