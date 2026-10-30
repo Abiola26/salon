@@ -142,7 +142,23 @@ const sendPaymentConfirmationEmail = async (user, payment, appointment, service)
   });
 };
 
-const sendCancellationEmail = async (user, appointment, service) => {
+const sendCancellationEmail = async (
+  user,
+  appointment,
+  service,
+  { depositForfeited = false, freeCancelHours = 48, refundedPayments = 0 } = {}
+) => {
+  const policyNote = depositForfeited
+    ? `<p style="color:#b45309">Because this cancellation was made less than ${freeCancelHours} hours before the appointment, the deposit is forfeited per our cancellation policy.</p>`
+    : refundedPayments > 0
+      ? '<p style="color:#047857">Your payment has been refunded. Please allow 5-10 business days for it to appear.</p>'
+      : '';
+  const policyText = depositForfeited
+    ? ` Because this cancellation was made less than ${freeCancelHours} hours before the appointment, the deposit is forfeited.`
+    : refundedPayments > 0
+      ? ' Your payment has been refunded.'
+      : '';
+
   await sendEmail({
     to: user.email,
     subject: '❌ Appointment Cancelled',
@@ -155,10 +171,11 @@ const sendCancellationEmail = async (user, appointment, service) => {
           <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Date</td><td style="padding:8px;border:1px solid #e5e7eb">${new Date(appointment.appointmentDate).toDateString()}</td></tr>
           <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Time</td><td style="padding:8px;border:1px solid #e5e7eb">${appointment.appointmentTime}</td></tr>
         </table>
+        ${policyNote}
         <p>We hope to see you again soon. <a href="${CLIENT_URL}">Book a new appointment</a></p>
       </div>
     `,
-    text: `Your appointment for ${service.name} on ${appointment.appointmentDate} has been cancelled.`,
+    text: `Your appointment for ${service.name} on ${appointment.appointmentDate} has been cancelled.${policyText}`,
   });
 };
 

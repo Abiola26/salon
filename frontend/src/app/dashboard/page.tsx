@@ -43,7 +43,7 @@ interface Appointment {
   id: string;
   appointmentDate: string; // ISO String
   appointmentTime: string; // HH:MM
-  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
+  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
   amountPaid: string;
   notes?: string | null;
@@ -70,6 +70,7 @@ export default function CustomerDashboardPage() {
   // State for cancel modal
   const [cancellingAppt, setCancellingAppt] = useState<Appointment | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
 
   // State for rescheduling
   const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
@@ -213,14 +214,19 @@ export default function CustomerDashboardPage() {
     now.setHours(0, 0, 0, 0);
 
     const upcoming = allAppointments.filter((appt) => {
-      if (appt.status === "CANCELLED") return false;
+      if (appt.status === "CANCELLED" || appt.status === "NO_SHOW") return false;
       const apptDate = parseLocalDate(appt.appointmentDate);
       return apptDate >= now && appt.status !== "COMPLETED";
     });
 
     const past = allAppointments.filter((appt) => {
       const apptDate = parseLocalDate(appt.appointmentDate);
-      return apptDate < now || appt.status === "CANCELLED" || appt.status === "COMPLETED";
+      return (
+        apptDate < now ||
+        appt.status === "CANCELLED" ||
+        appt.status === "COMPLETED" ||
+        appt.status === "NO_SHOW"
+      );
     });
 
     // Sort upcoming ascending, past descending
@@ -268,7 +274,10 @@ export default function CustomerDashboardPage() {
   const cancelAppointmentMutation = useMutation({
     mutationFn: async (appointmentId: string) => {
       const res = await api.delete(`/appointments/${appointmentId}`);
-      return res.data?.data as Appointment;
+      return res.data?.data as Appointment & {
+        depositForfeited?: boolean;
+        refundedPayments?: number;
+      };
     },
     onMutate: async (appointmentId) => {
       setCancelError(null);
@@ -299,6 +308,13 @@ export default function CustomerDashboardPage() {
         appointment.id === cancelledAppointment.id
           ? { ...appointment, ...cancelledAppointment }
           : appointment
+      );
+      setCancelNotice(
+        cancelledAppointment.depositForfeited
+          ? `Appointment cancelled. Your ${depositLabel} deposit was forfeited because the cancellation was inside the ${freeCancelHours}-hour window.`
+          : (cancelledAppointment.refundedPayments ?? 0) > 0
+          ? "Appointment cancelled. Your payment has been refunded and should appear within 5-10 business days."
+          : "Appointment cancelled."
       );
       setCancellingAppt(null);
     },
@@ -494,6 +510,16 @@ export default function CustomerDashboardPage() {
         </div>
 
 
+        {cancelNotice && (
+          <div
+            role="status"
+            className="bg-green-950/30 border border-green-900/40 text-green-300 p-3 rounded-lg flex items-start gap-2 text-xs"
+          >
+            <CheckCircle className="h-4.5 w-4.5 text-green-400 shrink-0 mt-0.5" />
+            <span>{cancelNotice}</span>
+          </div>
+        )}
+
         <div className="flex gap-4 border-b border-zinc-800 pb-2.5">
           <button
             onClick={() => setActiveTab("upcoming")}
@@ -562,10 +588,12 @@ export default function CustomerDashboardPage() {
                             ? "bg-[#E60654]/10 text-[#E60654] border-[#E60654]/20"
                             : appt.status === "CANCELLED"
                             ? "bg-red-950/20 text-red-400 border-red-900/40"
+                            : appt.status === "NO_SHOW"
+                            ? "bg-amber-950/20 text-amber-400 border-amber-900/40"
                             : "bg-zinc-800 text-zinc-400 border-zinc-700"
                         }`}
                       >
-                        {appt.status}
+                        {appt.status === "NO_SHOW" ? "NO SHOW" : appt.status}
                       </span>
                     </div>
                   </div>
@@ -617,7 +645,9 @@ export default function CustomerDashboardPage() {
 
                   {/* Right Column: Actions */}
                   <div className="flex flex-col gap-2.5 md:pl-6">
-                    {appt.status !== "CANCELLED" && appt.status !== "COMPLETED" && (
+                    {appt.status !== "CANCELLED" &&
+                      appt.status !== "COMPLETED" &&
+                      appt.status !== "NO_SHOW" && (
                       <>
                         {appt.paymentStatus !== "PAID" && (
                           <button
@@ -642,6 +672,7 @@ export default function CustomerDashboardPage() {
                         <button
                           onClick={() => {
                             setCancelError(null);
+                            setCancelNotice(null);
                             setCancellingAppt(appt);
                           }}
                           className="w-full bg-transparent hover:bg-red-950/20 text-zinc-400 border border-transparent hover:border-red-900/40 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -655,6 +686,12 @@ export default function CustomerDashboardPage() {
                       <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5 py-4">
                         <XCircle className="h-4 w-4 text-red-500" />
                         <span>Reservation Cancelled</span>
+                      </div>
+                    )}
+                    {appt.status === "NO_SHOW" && (
+                      <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5 py-4">
+                        <XCircle className="h-4 w-4 text-amber-500" />
+                        <span>Missed Appointment</span>
                       </div>
                     )}
                     {appt.status === "COMPLETED" && (

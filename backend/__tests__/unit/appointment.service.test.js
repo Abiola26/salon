@@ -6,9 +6,12 @@ const serviceRepository = require('../../src/repositories/service.repository');
 const staffRepository = require('../../src/repositories/staff.repository');
 const couponRepository = require('../../src/repositories/coupon.repository');
 const staffLeaveRepository = require('../../src/repositories/staffLeave.repository');
+const paymentRepository = require('../../src/repositories/payment.repository');
+const paymentService = require('../../src/services/payment.service');
 const { prisma } = require('../../src/config/db');
 const emailUtils = require('../../src/utils/email');
 const { auditLog } = require('../../src/utils/audit');
+const logger = require('../../src/config/logger');
 const ApiError = require('../../src/utils/ApiError');
 
 jest.mock('../../src/repositories/appointment.repository');
@@ -16,6 +19,14 @@ jest.mock('../../src/repositories/service.repository');
 jest.mock('../../src/repositories/staff.repository');
 jest.mock('../../src/repositories/coupon.repository');
 jest.mock('../../src/repositories/staffLeave.repository');
+jest.mock('../../src/repositories/payment.repository');
+jest.mock('../../src/services/payment.service');
+jest.mock('../../src/config/logger', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
 jest.mock('../../src/config/db', () => {
   const prisma = {
     user: {
@@ -44,6 +55,9 @@ describe('appointmentService', () => {
     emailUtils.sendCancellationEmail.mockResolvedValue({});
     // Nobody is on leave unless a test says so
     staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue([]);
+    // Cancellation only refunds captured payments; default to none.
+    paymentRepository.findByAppointmentId.mockResolvedValue([]);
+    paymentService.initiateRefund.mockResolvedValue({ alreadyProcessed: false });
   });
 
   describe('createAppointment', () => {
@@ -219,8 +233,8 @@ describe('appointmentService', () => {
       staffRepository.findByServiceId.mockResolvedValue([{ id: 'st1' }, { id: 'st2' }]);
       appointmentRepository.checkSlotConflict
         .mockResolvedValueOnce({ appointmentTime: '10:00' }) // st1 busy
-        .mockResolvedValueOnce(null); // st2 free — picked by auto-assign
-      // final conflict check falls through to the default mock (undefined → no conflict)
+        .mockResolvedValueOnce(null); // st2 free â€” picked by auto-assign
+      // final conflict check falls through to the default mock (undefined â†’ no conflict)
       appointmentRepository.create.mockResolvedValue({
         id: 'a1',
         user: { email: 'u1@example.com' },
@@ -396,7 +410,7 @@ describe('appointmentService', () => {
 
     it('reschedules when the service record is missing (duration treated as 0)', async () => {
       appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 'gone', staffId: 'st1' });
-      serviceRepository.findById.mockResolvedValue(null); // service deleted → skip hours check
+      serviceRepository.findById.mockResolvedValue(null); // service deleted â†’ skip hours check
       appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       appointmentRepository.update.mockResolvedValue({ id: 'a1' });
 
@@ -446,6 +460,28 @@ describe('appointmentService', () => {
   });
 
   describe('cancelAppointment', () => {
+    const dateOffset = (days) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${d.getFullYear()}-${month}-${day}`;
+    };
+    const appointmentAt = (days, overrides = {}) => ({
+      id: 'a1',
+      userId: 'u1',
+      status: 'CONFIRMED',
+      appointmentDate: new Date(dateOffset(days)),
+      appointmentTime: '10:00',
+      paymentStatus: 'PARTIAL',
+      amountPaid: '30.00',
+      pointsRedeemed: 0,
+      couponId: null,
+      user: {},
+      service: {},
+      ...overrides,
+    });
+
     it('throws when not found', async () => {
       appointmentRepository.findById.mockResolvedValue(null);
 
@@ -453,28 +489,42 @@ describe('appointmentService', () => {
     });
 
     it('throws when already cancelled', async () => {
-      appointmentRepository.findById.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'CANCELLED' });
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, { status: 'CANCELLED' })
+      );
 
       await expect(appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')).rejects.toThrow('already cancelled');
     });
 
-    it('cancels appointment successfully and refunds loyalty points', async () => {
-      appointmentRepository.findById.mockResolvedValue({
-        id: 'a1',
-        userId: 'u1',
-        status: 'CONFIRMED',
-        pointsRedeemed: 30,
-        couponId: 'c1',
-        user: {},
-        service: {},
-      });
+    it('throws when the appointment is a no-show', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, { status: 'NO_SHOW' })
+      );
+
+      await expect(appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')).rejects.toThrow(
+        'Cannot cancel a no-show appointment'
+      );
+    });
+
+    it('cancels appointment successfully, refunds loyalty points and captured payments', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, {
+          appointmentDate: new Date(dateOffset(7)),
+          paymentStatus: 'PAID',
+          pointsRedeemed: 30,
+          couponId: 'c1',
+        })
+      );
       prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
       prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
       prisma.user.update.mockResolvedValue({});
-      emailUtils.sendCancellationEmail.mockResolvedValue({});
       auditLog.mockResolvedValue({});
+      paymentRepository.findByAppointmentId.mockResolvedValue([
+        { id: 'p1', status: 'SUCCEEDED' },
+        { id: 'p2', status: 'FAILED' },
+      ]);
 
-      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
+      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER', '127.0.0.1');
 
       expect(prisma.appointment.updateMany).toHaveBeenCalledWith({
         where: { id: 'a1', status: { in: ['PENDING', 'CONFIRMED'] } },
@@ -486,24 +536,177 @@ describe('appointmentService', () => {
         })
       );
       expect(couponRepository.releaseUsage).toHaveBeenCalledWith('c1', prisma);
-      expect(result).toEqual({ id: 'a1', status: 'CANCELLED' });
+      expect(paymentService.initiateRefund).toHaveBeenCalledTimes(1);
+      expect(paymentService.initiateRefund).toHaveBeenCalledWith('p1', 'u1', '127.0.0.1');
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: 'a1',
+          status: 'CANCELLED',
+          depositForfeited: false,
+          refundedPayments: 1,
+          refundFailed: false,
+        })
+      );
+    });
+
+    it('forfeits the deposit on a late customer cancellation (no refund)', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        ...appointmentAt(1),
+        appointmentDate: new Date(dateOffset(1)),
+      });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+      paymentRepository.findByAppointmentId.mockResolvedValue([{ id: 'p1', status: 'SUCCEEDED' }]);
+
+      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
+
+      expect(paymentService.initiateRefund).not.toHaveBeenCalled();
+      expect(result.depositForfeited).toBe(true);
+      expect(result.refundedPayments).toBe(0);
+      expect(emailUtils.sendCancellationEmail).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ depositForfeited: true })
+      );
+    });
+
+    it('does not flag forfeiture when nothing was actually paid', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        ...appointmentAt(1, { paymentStatus: 'PAID', amountPaid: '0.00' }),
+        appointmentDate: new Date(dateOffset(1)),
+      });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+
+      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
+
+      expect(result.depositForfeited).toBe(false);
+    });
+
+    it('admin cancellation overrides the window and refunds captured payments', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        ...appointmentAt(1),
+        appointmentDate: new Date(dateOffset(1)),
+      });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+      paymentRepository.findByAppointmentId.mockResolvedValue([{ id: 'p1', status: 'SUCCEEDED' }]);
+
+      const result = await appointmentService.cancelAppointment('a1', 'admin-1', 'ADMIN');
+
+      expect(paymentService.initiateRefund).toHaveBeenCalledWith('p1', 'admin-1', null);
+      expect(result.depositForfeited).toBe(false);
+      expect(result.refundedPayments).toBe(1);
+    });
+
+    it('keeps the cancellation when a Stripe auto-refund fails', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, { appointmentDate: new Date(dateOffset(7)) })
+      );
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+      paymentRepository.findByAppointmentId.mockResolvedValue([{ id: 'p1', status: 'SUCCEEDED' }]);
+      paymentService.initiateRefund.mockRejectedValue(new Error('refund_declined'));
+
+      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
+
+      expect(result.status).toBe('CANCELLED');
+      expect(result.refundFailed).toBe(true);
+      expect(result.refundedPayments).toBe(0);
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Auto-refund failed'));
     });
 
     it('rejects when a concurrent request already changed the status', async () => {
-      appointmentRepository.findById.mockResolvedValue({
-        id: 'a1',
-        userId: 'u1',
-        status: 'PENDING',
-        pointsRedeemed: 0,
-        user: {},
-        service: {},
-      });
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, { status: 'PENDING' })
+      );
       prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
         appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')
-      ).rejects.toThrow('already cancelled or completed');
+      ).rejects.toThrow('already cancelled, completed, or a no-show');
       expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markNoShow', () => {
+    const dateOffset = (days) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${d.getFullYear()}-${month}-${day}`;
+    };
+    const pastAppointment = (overrides = {}) => ({
+      id: 'a1',
+      userId: 'u1',
+      status: 'CONFIRMED',
+      appointmentDate: new Date(dateOffset(-1)),
+      appointmentTime: '10:00',
+      paymentStatus: 'PARTIAL',
+      amountPaid: '30.00',
+      ...overrides,
+    });
+
+    it('throws when not found', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue(null);
+
+      await expect(appointmentService.markNoShow('a1', 'admin-1')).rejects.toThrow(
+        'Appointment not found'
+      );
+    });
+
+    it('rejects a future appointment', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue(
+        pastAppointment({ appointmentDate: new Date(dateOffset(1)) })
+      );
+
+      await expect(appointmentService.markNoShow('a1', 'admin-1')).rejects.toThrow(
+        'Cannot mark a future appointment as a no-show'
+      );
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an already-cancelled appointment', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue(
+        pastAppointment({ status: 'CANCELLED' })
+      );
+
+      await expect(appointmentService.markNoShow('a1', 'admin-1')).rejects.toThrow(
+        'Cannot mark a cancelled appointment as a no-show'
+      );
+    });
+
+    it('marks a past appointment as NO_SHOW via CAS and audits it', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue(pastAppointment());
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      appointmentRepository.findById.mockResolvedValue({ id: 'a1', status: 'NO_SHOW' });
+
+      const result = await appointmentService.markNoShow('a1', 'admin-1', '127.0.0.1');
+
+      expect(prisma.appointment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'a1', status: { in: ['PENDING', 'CONFIRMED'] } },
+        data: { status: 'NO_SHOW' },
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ id: 'a1', status: 'NO_SHOW', depositForfeited: true })
+      );
+      expect(auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'MARK_NO_SHOW' })
+      );
+    });
+
+    it('rejects when a concurrent request changed the status first', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValueOnce(pastAppointment());
+      appointmentRepository.findByIdRaw.mockResolvedValueOnce(
+        pastAppointment({ status: 'CANCELLED' })
+      );
+      prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(appointmentService.markNoShow('a1', 'admin-1')).rejects.toThrow(
+        'Cannot mark an appointment that is cancelled as a no-show'
+      );
     });
   });
 
@@ -622,3 +825,4 @@ describe('appointmentService', () => {
     });
   });
 });
+

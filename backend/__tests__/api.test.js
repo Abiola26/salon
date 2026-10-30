@@ -17,6 +17,7 @@ let adminToken = '';
 let customerToken = '';
 let createdServiceId = '';
 let createdAppointmentId = '';
+let noShowAppointmentId = '';
 let createdStaffId = '';
 let createdCouponId = '';
 let createdCouponCode = '';
@@ -250,6 +251,67 @@ describe('Appointments API', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.message).toContain('cancelled');
+  });
+
+  it('PATCH /api/appointments/:id/no-show — rejects a future appointment (400)', async () => {
+    if (!createdServiceId || !customerToken) return;
+
+    const created = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        appointmentDate: tomorrowStr,
+        appointmentTime: '13:00',
+        notes: 'No-show integration test booking',
+      });
+
+    expect(created.statusCode).toBe(201);
+    noShowAppointmentId = created.body.data.id;
+
+    const res = await request(app)
+      .patch(`/api/appointments/${noShowAppointmentId}/no-show`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toContain('future');
+  });
+
+  it('PATCH /api/appointments/:id/no-show — customer is forbidden (403)', async () => {
+    if (!noShowAppointmentId) return;
+    const res = await request(app)
+      .patch(`/api/appointments/${noShowAppointmentId}/no-show`)
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('PATCH /api/appointments/:id/no-show — admin marks a past appointment NO_SHOW', async () => {
+    if (!noShowAppointmentId) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    await prisma.appointment.update({
+      where: { id: noShowAppointmentId },
+      data: { appointmentDate: yesterday, appointmentTime: '10:00' },
+    });
+
+    const res = await request(app)
+      .patch(`/api/appointments/${noShowAppointmentId}/no-show`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.status).toBe('NO_SHOW');
+  });
+
+  it('PATCH /api/appointments/:id/confirm — rejects a no-show appointment (400)', async () => {
+    if (!noShowAppointmentId) return;
+    const res = await request(app)
+      .patch(`/api/appointments/${noShowAppointmentId}/confirm`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toContain('no show');
   });
 });
 

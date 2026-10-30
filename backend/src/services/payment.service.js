@@ -23,6 +23,11 @@ const paymentService = {
     if (appointment.status === 'CANCELLED') {
       throw ApiError.badRequest('Cannot process payment for a cancelled appointment');
     }
+    if (appointment.status === 'COMPLETED' || appointment.status === 'NO_SHOW') {
+      throw ApiError.badRequest(
+        `Cannot process payment for a ${appointment.status.toLowerCase().replace(/_/g, ' ')} appointment`
+      );
+    }
 
     if (appointment.paymentStatus === 'PAID') {
       throw ApiError.badRequest('This appointment is already fully paid');
