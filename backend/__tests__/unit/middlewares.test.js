@@ -211,3 +211,53 @@ describe('authenticate middleware', () => {
     );
   });
 });
+
+// ─── Phase 7: requestId middleware ───────────────────────────────────────────
+
+const requestId = require('../../src/middlewares/requestId.middleware');
+
+describe('requestId middleware', () => {
+  it('generates a UUID and exposes it on the response', () => {
+    const req = { headers: {} };
+    const res = { setHeader: jest.fn() };
+    const next = jest.fn();
+
+    requestId(req, res, next);
+
+    expect(req.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', req.id);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('honors a sane inbound X-Request-Id', () => {
+    const req = { headers: { 'x-request-id': 'req-abc-123' } };
+    const res = { setHeader: jest.fn() };
+    const next = jest.fn();
+
+    requestId(req, res, next);
+
+    expect(req.id).toBe('req-abc-123');
+    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', 'req-abc-123');
+  });
+
+  it('replaces an overlong inbound id', () => {
+    const req = { headers: { 'x-request-id': 'x'.repeat(101) } };
+    const res = { setHeader: jest.fn() };
+    const next = jest.fn();
+
+    requestId(req, res, next);
+
+    expect(req.id).not.toHaveLength(101);
+    expect(req.id).toHaveLength(36);
+  });
+
+  it('replaces a non-string inbound id', () => {
+    const req = { headers: { 'x-request-id': ['a', 'b'] } };
+    const res = { setHeader: jest.fn() };
+    const next = jest.fn();
+
+    requestId(req, res, next);
+
+    expect(req.id).toHaveLength(36);
+  });
+});

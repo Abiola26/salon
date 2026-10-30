@@ -5,13 +5,19 @@ const router = express.Router();
 const couponController = require('../controllers/coupon.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { adminOnly } = require('../middlewares/admin.middleware');
+const { validate } = require('../middlewares/validate.middleware');
+const {
+  createCouponSchema,
+  updateCouponSchema,
+  validateCouponSchema,
+} = require('../validators/coupon.validator');
 
 /**
  * @route   POST /api/coupons/validate
  * @desc    Validate a coupon code and return discount info
  * @access  Authenticated customers
  */
-router.post('/validate', authenticate, couponController.validateCoupon);
+router.post('/validate', authenticate, validate(validateCouponSchema), couponController.validateCoupon);
 
 /**
  * @route   GET /api/coupons
@@ -32,14 +38,14 @@ router.get('/:id', authenticate, adminOnly, couponController.getCouponById);
  * @desc    Create a new coupon
  * @access  Admin
  */
-router.post('/', authenticate, adminOnly, couponController.createCoupon);
+router.post('/', authenticate, adminOnly, validate(createCouponSchema), couponController.createCoupon);
 
 /**
  * @route   PUT /api/coupons/:id
  * @desc    Update a coupon
  * @access  Admin
  */
-router.put('/:id', authenticate, adminOnly, couponController.updateCoupon);
+router.put('/:id', authenticate, adminOnly, validate(updateCouponSchema), couponController.updateCoupon);
 
 /**
  * @route   DELETE /api/coupons/:id

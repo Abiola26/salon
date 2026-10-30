@@ -5,7 +5,7 @@ const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { validate } = require('../middlewares/validate.middleware');
-const { authLimiter, passwordResetLimiter } = require('../middlewares/rateLimiter.middleware');
+const { authLimiter, passwordResetLimiter, refreshLimiter } = require('../middlewares/rateLimiter.middleware');
 const {
   registerSchema,
   loginSchema,
@@ -33,7 +33,7 @@ router.post('/login', authLimiter, validate(loginSchema), authController.login);
  * @desc    Get a new access token using a valid refresh token
  * @access  Public
  */
-router.post('/refresh-token', validate(refreshTokenSchema), authController.refreshToken);
+router.post('/refresh-token', refreshLimiter, validate(refreshTokenSchema), authController.refreshToken);
 
 /**
  * @route   POST /api/auth/logout

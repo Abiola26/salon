@@ -182,7 +182,7 @@ describe('appointmentService', () => {
       expect(couponRepository.incrementUsage).toHaveBeenCalledWith('c1', expect.anything());
       expect(appointmentRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          discountAmount: 20, // 20% of 100
+          discountAmount: '20.00', // 20% of 100, as a 2dp Prisma Decimal string
         }),
         expect.anything()
       );
@@ -508,15 +508,51 @@ describe('appointmentService', () => {
   });
 
   describe('confirmAppointment', () => {
-    it('confirms appointment successfully', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1' });
-      appointmentRepository.update.mockResolvedValue({ id: 'a1', status: 'CONFIRMED' });
+    it('confirms a PENDING appointment via status CAS', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING' });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      appointmentRepository.findById.mockResolvedValue({ id: 'a1', status: 'CONFIRMED' });
       auditLog.mockResolvedValue({});
 
       const result = await appointmentService.confirmAppointment('a1', 'admin-1');
 
-      expect(appointmentRepository.update).toHaveBeenCalledWith('a1', { status: 'CONFIRMED' });
+      expect(prisma.appointment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'a1', status: 'PENDING' },
+        data: { status: 'CONFIRMED' },
+      });
+      expect(appointmentRepository.findById).toHaveBeenCalledWith('a1');
+      expect(result).toEqual({ id: 'a1', status: 'CONFIRMED' });
       expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'CONFIRM_APPOINTMENT' }));
+    });
+
+    it('rejects confirming a cancelled appointment', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'CANCELLED' });
+
+      await expect(appointmentService.confirmAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot confirm a cancelled appointment'
+      );
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects confirming a completed appointment', async () => {
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'COMPLETED' });
+
+      await expect(appointmentService.confirmAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot confirm a completed appointment'
+      );
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the status changed between read and CAS (race)', async () => {
+      appointmentRepository.findByIdRaw
+        .mockResolvedValueOnce({ id: 'a1', userId: 'u1', status: 'PENDING' })
+        .mockResolvedValueOnce({ id: 'a1', userId: 'u1', status: 'CANCELLED' });
+      prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(appointmentService.confirmAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot confirm an appointment that is cancelled'
+      );
+      expect(auditLog).not.toHaveBeenCalled();
     });
   });
 

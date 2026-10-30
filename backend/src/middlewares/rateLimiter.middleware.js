@@ -41,6 +41,16 @@ const passwordResetLimiter = createRateLimiter({
 });
 
 /**
+ * Refresh-token limiter — rotation legitimately fires often (every 401 retry
+ * after an access-token expiry), so the budget is higher than login.
+ */
+const refreshLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many token refresh attempts, please try again later',
+});
+
+/**
  * Payment endpoint limiter
  */
 const paymentLimiter = createRateLimiter({
@@ -52,5 +62,6 @@ module.exports = {
   globalLimiter,
   authLimiter,
   passwordResetLimiter,
+  refreshLimiter,
   paymentLimiter,
 };

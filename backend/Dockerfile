@@ -27,6 +27,9 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src ./src
 
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 5000
 
 CMD ["npm", "start"]

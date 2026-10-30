@@ -480,7 +480,7 @@ export default function UserManagementPage() {
               Delete User?
             </h2>
             <p className="text-zinc-400 text-sm">
-              Are you sure you want to permanently delete this user account? All booking records, details, and loyalty balances will be deleted from the database.
+              Are you sure you want to delete this user account? Their personal details, phone number, and loyalty balance will be permanently removed and all sessions revoked. Past appointments, payments, and reviews are kept for business records.
             </p>
             <div className="flex gap-3">
               <button

@@ -224,3 +224,153 @@ describe('staffLeaveValidator', () => {
     });
   });
 });
+
+// ─── Phase 7: staff / coupon / admin user validators ─────────────────────────
+
+const { createStaffSchema, updateStaffSchema } = require('../../src/validators/staff.validator');
+const {
+  createCouponSchema,
+  updateCouponSchema,
+  validateCouponSchema,
+} = require('../../src/validators/coupon.validator');
+const { adminUpdateUserSchema } = require('../../src/validators/user.validator');
+
+describe('staffValidator', () => {
+  it('accepts a minimal create payload', () => {
+    expect(createStaffSchema.safeParse({ name: 'Jane Doe' }).success).toBe(true);
+  });
+
+  it('rejects an empty name', () => {
+    expect(createStaffSchema.safeParse({ name: '   ' }).success).toBe(false);
+  });
+
+  it('rejects a non-URL image', () => {
+    expect(createStaffSchema.safeParse({ name: 'Jane', image: 'not-a-url' }).success).toBe(false);
+  });
+
+  it('rejects invalid serviceIds', () => {
+    expect(createStaffSchema.safeParse({ name: 'Jane', serviceIds: ['nope'] }).success).toBe(false);
+  });
+
+  it('allows a partial update payload', () => {
+    expect(updateStaffSchema.safeParse({ isActive: false }).success).toBe(true);
+  });
+
+  it('rejects more than 50 serviceIds', () => {
+    const ids = Array.from({ length: 51 }, () => '00000000-0000-4000-8000-000000000000');
+    expect(createStaffSchema.safeParse({ name: 'Jane', serviceIds: ids }).success).toBe(false);
+  });
+});
+
+describe('couponValidator', () => {
+  const valid = { code: 'SAVE10', discountType: 'PERCENTAGE', discountValue: 10 };
+
+  it('accepts a valid create payload', () => {
+    expect(createCouponSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it('coerces numeric strings for discountValue', () => {
+    const r = createCouponSchema.safeParse({ ...valid, discountValue: '15' });
+    expect(r.success).toBe(true);
+    expect(r.data.discountValue).toBe(15);
+  });
+
+  it('rejects a negative discountValue', () => {
+    expect(createCouponSchema.safeParse({ ...valid, discountValue: -5 }).success).toBe(false);
+  });
+
+  it('rejects a percentage above 100 (refine)', () => {
+    const r = createCouponSchema.safeParse({ ...valid, discountValue: 101 });
+    expect(r.success).toBe(false);
+    expect(r.error.errors[0].message).toBe('Percentage discount cannot exceed 100');
+  });
+
+  it('allows a flat discount above 100', () => {
+    expect(
+      createCouponSchema.safeParse({ code: 'FLAT150', discountType: 'FLAT', discountValue: 150 }).success
+    ).toBe(true);
+  });
+
+  it('rejects an invalid code format', () => {
+    expect(createCouponSchema.safeParse({ ...valid, code: 'BAD CODE!' }).success).toBe(false);
+  });
+
+  it('rejects an unknown discountType', () => {
+    expect(createCouponSchema.safeParse({ ...valid, discountType: 'BOGO' }).success).toBe(false);
+  });
+
+  it('rejects endDate before startDate (refine)', () => {
+    const r = createCouponSchema.safeParse({
+      ...valid,
+      startDate: '2026-02-01',
+      endDate: '2026-01-01',
+    });
+    expect(r.success).toBe(false);
+    expect(r.error.errors.some((e) => e.message === 'End date must be on or after the start date')).toBe(true);
+  });
+
+  it('accepts date strings and coerces them to Date', () => {
+    const r = createCouponSchema.safeParse({
+      ...valid,
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+    });
+    expect(r.success).toBe(true);
+    expect(r.data.startDate).toBeInstanceOf(Date);
+  });
+
+  it('allows a partial update payload', () => {
+    expect(updateCouponSchema.safeParse({ isActive: false }).success).toBe(true);
+  });
+
+  it('applies the percentage refine to partial updates', () => {
+    expect(
+      updateCouponSchema.safeParse({ discountType: 'PERCENTAGE', discountValue: 120 }).success
+    ).toBe(false);
+  });
+
+  it('validateCouponSchema accepts numeric strings and coerces servicePrice', () => {
+    const r = validateCouponSchema.safeParse({ code: 'SAVE10', servicePrice: '99.99' });
+    expect(r.success).toBe(true);
+    expect(r.data.servicePrice).toBe(99.99);
+  });
+
+  it('validateCouponSchema rejects a negative service price', () => {
+    expect(validateCouponSchema.safeParse({ code: 'SAVE10', servicePrice: -1 }).success).toBe(false);
+  });
+});
+
+describe('adminUpdateUserSchema', () => {
+  it('accepts an empty update', () => {
+    expect(adminUpdateUserSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts a full valid update', () => {
+    const r = adminUpdateUserSchema.safeParse({
+      name: 'Anne Admin',
+      email: 'anne@example.com',
+      role: 'ADMIN',
+      loyaltyPoints: 25,
+      phoneNumber: '+15555550100',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects an invalid role', () => {
+    expect(adminUpdateUserSchema.safeParse({ role: 'SUPERADMIN' }).success).toBe(false);
+  });
+
+  it('rejects negative loyaltyPoints', () => {
+    expect(adminUpdateUserSchema.safeParse({ loyaltyPoints: -1 }).success).toBe(false);
+  });
+
+  it('coerces loyaltyPoints from a numeric string', () => {
+    const r = adminUpdateUserSchema.safeParse({ loyaltyPoints: '50' });
+    expect(r.success).toBe(true);
+    expect(r.data.loyaltyPoints).toBe(50);
+  });
+
+  it('rejects an invalid email', () => {
+    expect(adminUpdateUserSchema.safeParse({ email: 'nope' }).success).toBe(false);
+  });
+});

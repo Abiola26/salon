@@ -366,8 +366,7 @@ function BookingWizardContent() {
     createBookingMutation.mutate();
   };
 
-  const handlePaymentSuccess = (paymentIntentId: string) => {
-    console.log("Payment successful, Intent ID:", paymentIntentId);
+  const handlePaymentSuccess = () => {
     confetti({
       particleCount: 150,
       spread: 80,

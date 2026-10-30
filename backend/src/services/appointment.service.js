@@ -16,7 +16,7 @@ const {
   timeToMinutes,
   WORKING_HOURS,
 } = require('../config/workingHours');
-const { toCents } = require('../utils/money');
+const { toCents, toDecimal2 } = require('../utils/money');
 const {
   POINTS_VALUE_IN_DOLLARS,
   MAX_POINTS_REDEMPTION_PCT,
@@ -53,8 +53,9 @@ const appointmentService = {
     }
 
     // ── Coupon Validation (read-only; consumed atomically inside the tx) ─────
+    const servicePriceCents = Math.max(0, toCents(service.price));
     let couponId = null;
-    let couponDiscount = 0;
+    let couponDiscountCents = 0;
     if (dto.couponCode) {
       const coupon = await couponRepository.findByCode(dto.couponCode);
       if (coupon && coupon.isActive) {
@@ -66,29 +67,32 @@ const appointmentService = {
           couponId = coupon.id;
           if (coupon.discountType === 'PERCENTAGE') {
             // Integer-cents math, rounded once — 15.5% of $33.33 = $5.17, not 5.166...
-            couponDiscount = Math.round((toCents(service.price) * parseFloat(coupon.discountValue)) / 100) / 100;
+            const percent = Math.min(100, Math.max(0, parseFloat(coupon.discountValue)));
+            couponDiscountCents = Math.round((servicePriceCents * percent) / 100);
           } else {
-            couponDiscount = Math.min(toCents(coupon.discountValue), toCents(service.price)) / 100;
+            couponDiscountCents = Math.max(0, toCents(coupon.discountValue));
           }
+          couponDiscountCents = Math.min(couponDiscountCents, servicePriceCents);
         }
       }
     }
 
     // ── Loyalty Points Redemption (read-only) ─────────────────────────────────
+    const pointsValueCents = toCents(POINTS_VALUE_IN_DOLLARS);
     let pointsRedeemed = 0;
-    let pointsDiscount = 0;
+    let pointsDiscountCents = 0;
     if (dto.redeemPoints) {
       const user = await prisma.user.findUnique({ where: { id: userId }, select: { loyaltyPoints: true } });
-      const priceAfterCoupon = parseFloat(service.price) - couponDiscount;
-      const maxPointsDiscount = priceAfterCoupon * MAX_POINTS_REDEMPTION_PCT;
-      const availablePointsValue = (user?.loyaltyPoints || 0) * POINTS_VALUE_IN_DOLLARS;
-      pointsDiscount = Math.min(availablePointsValue, maxPointsDiscount);
-      pointsRedeemed = Math.floor(pointsDiscount / POINTS_VALUE_IN_DOLLARS);
-      pointsDiscount = pointsRedeemed * POINTS_VALUE_IN_DOLLARS;
+      const priceAfterCouponCents = Math.max(0, servicePriceCents - couponDiscountCents);
+      const maxPointsDiscountCents = Math.floor(priceAfterCouponCents * MAX_POINTS_REDEMPTION_PCT);
+      const availablePointsCents = (user?.loyaltyPoints || 0) * pointsValueCents;
+      pointsDiscountCents = Math.min(availablePointsCents, maxPointsDiscountCents);
+      pointsRedeemed = Math.floor(pointsDiscountCents / pointsValueCents);
+      pointsDiscountCents = pointsRedeemed * pointsValueCents;
     }
 
-    const totalDiscount = couponDiscount + pointsDiscount;
-    const discountAmount = parseFloat(Math.min(totalDiscount, parseFloat(service.price)).toFixed(2));
+    const discountCents = Math.min(couponDiscountCents + pointsDiscountCents, servicePriceCents);
+    const discountAmount = toDecimal2(discountCents);
 
     // ── Book under a per-date advisory lock ───────────────────────────────────
     // Concurrent bookings for the same date serialize on this lock (works across
@@ -162,7 +166,7 @@ const appointmentService = {
             notes: dto.notes || null,
             status: 'PENDING',
             // Fully discounted ⇒ nothing left to charge (paymentStatus is PAID).
-            paymentStatus: toCents(service.price) <= toCents(discountAmount) ? 'PAID' : 'UNPAID',
+            paymentStatus: servicePriceCents <= discountCents ? 'PAID' : 'UNPAID',
             amountPaid: 0,
             discountAmount,
             pointsRedeemed,
@@ -367,7 +371,25 @@ const appointmentService = {
   async confirmAppointment(id, actorId = null, ipAddress = null) {
     const appointment = await appointmentRepository.findByIdRaw(id);
     if (!appointment) throw ApiError.notFound('Appointment not found');
-    const confirmed = await appointmentRepository.update(id, { status: 'CONFIRMED' });
+    if (appointment.status === 'CANCELLED' || appointment.status === 'COMPLETED') {
+      throw ApiError.badRequest(`Cannot confirm a ${appointment.status.toLowerCase()} appointment`);
+    }
+
+    // CAS: only PENDING → CONFIRMED, so a concurrent cancel cannot be resurrected.
+    const claimed = await prisma.appointment.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'CONFIRMED' },
+    });
+    if (claimed.count === 0) {
+      const current = await appointmentRepository.findByIdRaw(id);
+      throw ApiError.badRequest(
+        current
+          ? `Cannot confirm an appointment that is ${current.status.toLowerCase()}`
+          : 'Appointment not found'
+      );
+    }
+
+    const confirmed = await appointmentRepository.findById(id);
 
     await auditLog({
       userId: actorId,
