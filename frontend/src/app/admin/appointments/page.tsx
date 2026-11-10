@@ -20,6 +20,7 @@ import {
   ChevronRight,
   MessageSquare,
   UserX,
+  CheckCheck,
 } from "lucide-react";
 import Calendar from "@/components/Calendar";
 
@@ -71,6 +72,7 @@ export default function AdminAppointmentsPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [noShowConfirmId, setNoShowConfirmId] = useState<string | null>(null);
+  const [completeConfirmId, setCompleteConfirmId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Rescheduling states
@@ -173,6 +175,18 @@ export default function AdminAppointmentsPage() {
     }
   };
 
+  const handleComplete = async (id: string) => {
+    setCompleteConfirmId(null);
+    setActionError(null);
+    try {
+      await api.patch(`/appointments/${id}/complete`);
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    } catch (err: unknown) {
+      setActionError(getApiErrorMessage(err, "Failed to mark appointment as completed."));
+    }
+  };
+
   const handleNoShow = async (id: string) => {
     setNoShowConfirmId(null);
     setActionError(null);
@@ -265,7 +279,7 @@ export default function AdminAppointmentsPage() {
             Manage Salon <span className="text-gold-gradient">Appointments</span>
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
-            Browse booking logs, reschedule time slots, confirm pending customers, and cancel orders.
+            Browse booking logs, reschedule time slots, confirm pending customers, complete finished visits, and cancel orders.
           </p>
         </div>
 
@@ -291,7 +305,7 @@ export default function AdminAppointmentsPage() {
                 <option value="ALL">All Statuses</option>
                 <option value="PENDING">PENDING</option>
                 <option value="CONFIRMED">CONFIRMED</option>
-                  <option value="CANCELLED">CANCELLED</option>
+                <option value="CANCELLED">CANCELLED</option>
                 <option value="COMPLETED">COMPLETED</option>
                 <option value="NO_SHOW">NO_SHOW</option>
               </select>
@@ -390,6 +404,10 @@ export default function AdminAppointmentsPage() {
                         .map(Number);
                       appointmentStart.setHours(startHour, startMinute, 0, 0);
                       const isPastAppointment = appointmentStart < new Date();
+                      const appointmentEnd = new Date(
+                        appointmentStart.getTime() + appt.service.duration * 60 * 1000
+                      );
+                      const isFinishedAppointment = appointmentEnd < new Date();
 
                       return (
                         <tr key={appt.id} className="hover:bg-zinc-950/15 transition duration-150">
@@ -495,6 +513,8 @@ export default function AdminAppointmentsPage() {
                                   ? "bg-[#E60654]/10 text-[#E60654] border border-[#E60654]/20"
                                   : appt.status === "CANCELLED"
                                   ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                  : appt.status === "COMPLETED"
+                                  ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                                   : appt.status === "NO_SHOW"
                                   ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                                   : "bg-zinc-800 text-zinc-400 border border-zinc-700"
@@ -519,6 +539,18 @@ export default function AdminAppointmentsPage() {
                                   ) : (
                                     <Check className="h-4 w-4" />
                                   )}
+                                </button>
+                              )}
+                              {appt.status === "CONFIRMED" && isFinishedAppointment && (
+                                <button
+                                  onClick={() => {
+                                    setActionError(null);
+                                    setCompleteConfirmId(appt.id);
+                                  }}
+                                  className="h-8 w-8 rounded-lg bg-sky-950/40 hover:bg-sky-900 border border-sky-900/40 text-sky-400 flex items-center justify-center transition cursor-pointer"
+                                  title="Mark Completed"
+                                >
+                                  <CheckCheck className="h-4 w-4" />
                                 </button>
                               )}
                               {["PENDING", "CONFIRMED"].includes(appt.status) &&
@@ -766,6 +798,35 @@ export default function AdminAppointmentsPage() {
                   className="flex-1 bg-red-700 hover:bg-red-600 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Confirm Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Complete Confirmation Modal */}
+        {completeConfirmId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="glass-panel w-full max-w-sm rounded-2xl border border-sky-900/40 p-6 space-y-5">
+              <h2 className="text-lg font-extrabold text-white">
+                Mark as Completed?
+              </h2>
+              <p className="text-zinc-400 text-sm">
+                Confirm the service was delivered. The appointment will be marked
+                COMPLETED and the customer can leave a review. This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setCompleteConfirmId(null)}
+                  className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer"
+                >
+                  Keep Booking
+                </button>
+                <button
+                  onClick={() => handleComplete(completeConfirmId)}
+                  className="flex-1 bg-sky-700 hover:bg-sky-600 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  Confirm Complete
                 </button>
               </div>
             </div>

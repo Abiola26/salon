@@ -6,6 +6,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { formatLocalDate, parseLocalDate } from "@/lib/date";
+import {
+  APPOINTMENT_STATUS_LABELS,
+  type AppointmentStatus,
+} from "@/lib/appointmentStatus";
 import { queryKeys } from "@/lib/queryKeys";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
@@ -43,7 +47,7 @@ interface Appointment {
   id: string;
   appointmentDate: string; // ISO String
   appointmentTime: string; // HH:MM
-  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
+  status: AppointmentStatus;
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
   amountPaid: string;
   notes?: string | null;
@@ -111,6 +115,13 @@ export default function CustomerDashboardPage() {
 
   const getDayName = (date: Date) =>
     date.toLocaleDateString("en-US", { weekday: "short" });
+
+  const getAppointmentStart = (appointment: Appointment) => {
+    const start = parseLocalDate(appointment.appointmentDate);
+    const [hour, minute] = appointment.appointmentTime.split(":").map(Number);
+    start.setHours(hour, minute, 0, 0);
+    return start;
+  };
 
   // Redirect to login if user not authenticated
   useEffect(() => {
@@ -210,24 +221,16 @@ export default function CustomerDashboardPage() {
   // Sort and filter appointments
   const getFilteredAppointments = () => {
     const now = new Date();
-    // Reset hours to compare dates easily
-    now.setHours(0, 0, 0, 0);
-
-    const upcoming = allAppointments.filter((appt) => {
-      if (appt.status === "CANCELLED" || appt.status === "NO_SHOW") return false;
-      const apptDate = parseLocalDate(appt.appointmentDate);
-      return apptDate >= now && appt.status !== "COMPLETED";
-    });
-
-    const past = allAppointments.filter((appt) => {
-      const apptDate = parseLocalDate(appt.appointmentDate);
-      return (
-        apptDate < now ||
+    const isUpcoming = (appt: Appointment) => {
+      const terminal =
         appt.status === "CANCELLED" ||
         appt.status === "COMPLETED" ||
-        appt.status === "NO_SHOW"
-      );
-    });
+        appt.status === "NO_SHOW";
+      return !terminal && getAppointmentStart(appt) >= now;
+    };
+
+    const upcoming = allAppointments.filter(isUpcoming);
+    const past = allAppointments.filter((appt) => !isUpcoming(appt));
 
     // Sort upcoming ascending, past descending
     upcoming.sort((a, b) => {
@@ -556,6 +559,7 @@ export default function CustomerDashboardPage() {
               const amountPaid = parseFloat(appt.amountPaid);
               const remainingBalance = servicePrice - amountPaid;
               const percentPaid = Math.min(100, Math.round((amountPaid / servicePrice) * 100));
+              const hasStarted = getAppointmentStart(appt) <= new Date();
 
               return (
                 <div
@@ -588,12 +592,14 @@ export default function CustomerDashboardPage() {
                             ? "bg-[#E60654]/10 text-[#E60654] border-[#E60654]/20"
                             : appt.status === "CANCELLED"
                             ? "bg-red-950/20 text-red-400 border-red-900/40"
+                            : appt.status === "COMPLETED"
+                            ? "bg-sky-950/20 text-sky-400 border-sky-900/40"
                             : appt.status === "NO_SHOW"
                             ? "bg-amber-950/20 text-amber-400 border-amber-900/40"
                             : "bg-zinc-800 text-zinc-400 border-zinc-700"
                         }`}
                       >
-                        {appt.status === "NO_SHOW" ? "NO SHOW" : appt.status}
+                        {APPOINTMENT_STATUS_LABELS[appt.status]}
                       </span>
                     </div>
                   </div>
@@ -658,28 +664,32 @@ export default function CustomerDashboardPage() {
                             Settle Balance (${remainingBalance.toFixed(2)})
                           </button>
                         )}
-                        <button
-                          onClick={() => {
-                            setReschedulingAppt(appt);
-                            setRescheduleDate(parseLocalDate(appt.appointmentDate));
-                            setRescheduleTime(null);
-                          }}
-                          className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <CalendarIcon className="h-3.5 w-3.5" />
-                          Reschedule Date
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCancelError(null);
-                            setCancelNotice(null);
-                            setCancellingAppt(appt);
-                          }}
-                          className="w-full bg-transparent hover:bg-red-950/20 text-zinc-400 border border-transparent hover:border-red-900/40 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          Cancel Reservation
-                        </button>
+                        {!hasStarted && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setReschedulingAppt(appt);
+                                setRescheduleDate(parseLocalDate(appt.appointmentDate));
+                                setRescheduleTime(null);
+                              }}
+                              className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <CalendarIcon className="h-3.5 w-3.5" />
+                              Reschedule Date
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCancelError(null);
+                                setCancelNotice(null);
+                                setCancellingAppt(appt);
+                              }}
+                              className="w-full bg-transparent hover:bg-red-950/20 text-zinc-400 border border-transparent hover:border-red-900/40 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                              Cancel Reservation
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                     {appt.status === "CANCELLED" && (
@@ -731,7 +741,7 @@ export default function CustomerDashboardPage() {
                 <p className="text-xs text-zinc-400 max-w-xs mx-auto leading-relaxed">
                   {activeTab === "upcoming"
                     ? "You do not have any upcoming beauty reservations currently scheduled."
-                    : "Your completed or cancelled bookings history is currently empty."}
+                    : "Your completed, cancelled, or missed bookings history is currently empty."}
                 </p>
                 {activeTab === "upcoming" && (
                   <button

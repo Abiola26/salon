@@ -5,6 +5,8 @@ const { prisma } = require('../config/db');
 const { sendAppointmentReminderEmail } = require('./email');
 const { processEmailQueue } = require('./emailQueue');
 const { SALON_TIMEZONE } = require('../config/env');
+const { salonDateString, addDaysToDateString } = require('./salonTime');
+const { completePastAppointments } = require('../jobs/appointmentCompletion.job');
 const logger = require('../config/logger');
 /**
  * Send reminder emails for appointments scheduled for tomorrow.
@@ -15,16 +17,11 @@ const scheduleAppointmentReminders = () => {
     logger.info('⏰ Running appointment reminder cron job...');
 
     try {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-
-      const dayAfter = new Date(tomorrow);
-      dayAfter.setDate(dayAfter.getDate() + 1);
+      const tomorrow = addDaysToDateString(salonDateString(), 1);
 
       const appointments = await prisma.appointment.findMany({
         where: {
-          appointmentDate: { gte: tomorrow, lt: dayAfter },
+          appointmentDate: new Date(`${tomorrow}T00:00:00.000Z`),
           status: { in: ['PENDING', 'CONFIRMED'] },
         },
         include: {
@@ -63,20 +60,9 @@ const scheduleAppointmentReminders = () => {
 const scheduleCompletionMarker = () => {
   cron.schedule('0 * * * *', async () => {
     try {
-      const now = new Date();
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-
-      const result = await prisma.appointment.updateMany({
-        where: {
-          appointmentDate: { lt: today },
-          status: 'CONFIRMED',
-        },
-        data: { status: 'COMPLETED' },
-      });
-
-      if (result.count > 0) {
-        logger.info(`Marked ${result.count} appointment(s) as COMPLETED`);
+      const { completed } = await completePastAppointments();
+      if (completed > 0) {
+        logger.info(`Marked ${completed} appointment(s) as COMPLETED`);
       }
     } catch (error) {
       logger.error(`Completion marker cron failed: ${error.message}`);
