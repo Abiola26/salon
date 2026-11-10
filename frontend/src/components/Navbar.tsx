@@ -151,6 +151,13 @@ export default function Navbar() {
                         >
                           User Management
                         </Link>
+                        <Link
+                          href="/admin/notifications"
+                          role="menuitem"
+                          className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
+                        >
+                          Notifications
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -288,6 +295,13 @@ export default function Navbar() {
                     className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     User Management
+                  </Link>
+                  <Link
+                    href="/admin/notifications"
+                    onClick={() => setIsOpen(false)}
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
+                  >
+                    Notifications
                   </Link>
                 </>
               )}

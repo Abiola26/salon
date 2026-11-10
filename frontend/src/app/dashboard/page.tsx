@@ -28,6 +28,9 @@ import {
   MessageSquare,
   Star,
   Gift,
+  Bell,
+  Mail,
+  Smartphone,
 } from "lucide-react";
 
 // Load Stripe
@@ -94,6 +97,10 @@ export default function CustomerDashboardPage() {
   const [reviewComment, setReviewComment] = useState<string>("");
   const [reviewError, setReviewError] = useState<string | null>(null);
 
+  // Notification preferences (Phase 10)
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null);
+
   // Fetch public config (deposit + cancellation policy copy)
   const { data: configResponse } = useQuery({
     queryKey: queryKeys.config,
@@ -154,6 +161,13 @@ export default function CustomerDashboardPage() {
     enabled: !!user,
   });
   const loyaltyPoints: number = userProfileResponse?.data?.loyaltyPoints || 0;
+  const emailReminders: boolean = userProfileResponse?.data?.emailReminders !== false;
+  const smsReminders: boolean = userProfileResponse?.data?.smsReminders !== false;
+  const profilePhone: string | null =
+    userProfileResponse?.data?.phoneNumber ?? user?.phoneNumber ?? null;
+  const phoneValue = phoneDraft ?? profilePhone ?? "";
+  const phoneDirty =
+    phoneDraft !== null && phoneDraft.trim() !== (profilePhone ?? "");
 
   // Fetch customer reviews
   const { data: myReviewsResponse } = useQuery({
@@ -438,6 +452,27 @@ export default function CustomerDashboardPage() {
     setPaymentClientSecret(null);
   };
 
+  const notificationPrefsMutation = useMutation({
+    mutationFn: async (updates: {
+      emailReminders?: boolean;
+      smsReminders?: boolean;
+      phoneNumber?: string | null;
+    }) => {
+      const res = await api.put("/users/profile", updates);
+      return res.data?.data;
+    },
+    onSuccess: (_data, updates) => {
+      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      setNotificationError(null);
+      if (updates.phoneNumber !== undefined) setPhoneDraft(null);
+    },
+    onError: (error) => {
+      setNotificationError(
+        getApiErrorMessage(error, "Failed to update notification preferences.")
+      );
+    },
+  });
+
   // Generate date options for rescheduling (next 14 days)
   const getRescheduleDays = () => {
     const list = [];
@@ -510,6 +545,143 @@ export default function CustomerDashboardPage() {
           >
             Redeem Now
           </button>
+        </div>
+
+        {/* Notification Preferences Card */}
+        <div
+          id="notifications"
+          className="glass-panel p-5 rounded-2xl border border-zinc-800 bg-zinc-950/30 space-y-4"
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+              <Bell className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                Notification Preferences
+              </p>
+              <p className="text-zinc-500 text-[11px] mt-0.5">
+                Choose how we send appointment reminders. Booking confirmations,
+                receipts, cancellations and refunds are always emailed.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={emailReminders}
+              aria-label="Email reminders"
+              onClick={() =>
+                notificationPrefsMutation.mutate({ emailReminders: !emailReminders })
+              }
+              disabled={notificationPrefsMutation.isPending || !userProfileResponse}
+              className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                emailReminders
+                  ? "border-primary/40 bg-primary/10 text-white"
+                  : "border-zinc-800 bg-zinc-900/40 text-zinc-400"
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Mail className="h-4 w-4" />
+                Email reminders
+              </span>
+              <span
+                className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  emailReminders ? "text-primary" : "text-zinc-500"
+                }`}
+              >
+                {emailReminders ? "On" : "Off"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={smsReminders}
+              aria-label="SMS reminders"
+              title={
+                !phoneValue.trim()
+                  ? "Add a phone number to enable SMS reminders"
+                  : undefined
+              }
+              onClick={() =>
+                notificationPrefsMutation.mutate({ smsReminders: !smsReminders })
+              }
+              disabled={
+                notificationPrefsMutation.isPending ||
+                !userProfileResponse ||
+                !phoneValue.trim()
+              }
+              className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                smsReminders && phoneValue.trim()
+                  ? "border-primary/40 bg-primary/10 text-white"
+                  : "border-zinc-800 bg-zinc-900/40 text-zinc-400"
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <Smartphone className="h-4 w-4" />
+                SMS reminders
+              </span>
+              <span
+                className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  !phoneValue.trim()
+                    ? "text-amber-400"
+                    : smsReminders
+                    ? "text-primary"
+                    : "text-zinc-500"
+                }`}
+              >
+                {!phoneValue.trim() ? "No phone" : smsReminders ? "On" : "Off"}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <label
+              htmlFor="notification-phone"
+              className="text-xs font-semibold text-zinc-400 sm:w-32"
+            >
+              Phone number
+            </label>
+            <input
+              id="notification-phone"
+              type="tel"
+              value={phoneValue}
+              onChange={(event) => setPhoneDraft(event.target.value)}
+              placeholder="+1 555 000 1234"
+              className="flex-1 bg-zinc-950 border border-zinc-800 focus:border-primary rounded-xl px-3 py-2 text-sm text-white outline-none transition"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                notificationPrefsMutation.mutate({
+                  phoneNumber: phoneValue.trim() || null,
+                })
+              }
+              disabled={!phoneDirty || notificationPrefsMutation.isPending}
+              className="text-xs font-bold text-black bg-primary hover:bg-primary-hover px-4 py-2 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              Save
+            </button>
+          </div>
+
+          {!profilePhone && (
+            <p className="text-[11px] text-amber-400/80">
+              Add a phone number to receive SMS reminders.
+            </p>
+          )}
+
+          {notificationError && (
+            <div
+              role="alert"
+              className="bg-red-950/30 border border-red-900/40 text-red-300 p-3 rounded-lg flex items-start gap-2 text-xs"
+            >
+              <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+              <span>{notificationError}</span>
+            </div>
+          )}
         </div>
 
 

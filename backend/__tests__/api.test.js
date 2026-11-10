@@ -396,6 +396,39 @@ describe('Users API', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('PUT /api/users/profile — updates reminder preferences', async () => {
+    const res = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ emailReminders: false, smsReminders: false });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.emailReminders).toBe(false);
+    expect(res.body.data.smsReminders).toBe(false);
+
+    const me = await request(app)
+      .get('/api/users/me')
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(me.body.data.emailReminders).toBe(false);
+    expect(me.body.data.smsReminders).toBe(false);
+
+    await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ emailReminders: true, smsReminders: true });
+  });
+
+  it('PUT /api/users/profile — rejects non-boolean reminder preferences with 422', async () => {
+    const res = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ emailReminders: 'yes' });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.errors.some((e) => e.field === 'emailReminders')).toBe(true);
+  });
+
   it('GET /api/users — admin should list all users', async () => {
     const res = await request(app)
       .get('/api/users')
@@ -422,6 +455,69 @@ describe('Users API', () => {
     expect(res.statusCode).toBe(422);
     expect(res.body.message).toBe('Validation failed');
     expect(res.body.errors.some((e) => e.field === 'role')).toBe(true);
+  });
+});
+
+// =============================================================================
+// NOTIFICATIONS ROUTES
+// =============================================================================
+describe('Notifications API', () => {
+  it('GET /api/notifications/summary — admin should get queue health + reminder stats', async () => {
+    const res = await request(app)
+      .get('/api/notifications/summary')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.emailQueue).toEqual(
+      expect.objectContaining({
+        pending: expect.any(Number),
+        sent: expect.any(Number),
+        failed: expect.any(Number),
+        total: expect.any(Number),
+      })
+    );
+    expect(res.body.data.reminders.rangeDays).toBe(7);
+    expect(res.body.data.reminders.email).toEqual(
+      expect.objectContaining({ sent: expect.any(Number), pending: expect.any(Number) })
+    );
+    expect(Array.isArray(res.body.data.recentFailures)).toBe(true);
+  });
+
+  it('GET /api/notifications/queue — admin should get a paginated queue', async () => {
+    const res = await request(app)
+      .get('/api/notifications/queue?page=1&limit=5&status=PENDING')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data.notifications)).toBe(true);
+    expect(res.body.data.meta).toEqual(
+      expect.objectContaining({ page: 1, limit: 5, total: expect.any(Number) })
+    );
+
+    const defaults = await request(app)
+      .get('/api/notifications/queue')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(defaults.statusCode).toBe(200);
+    expect(defaults.body.data.meta.page).toBe(1);
+    expect(defaults.body.data.meta.limit).toBe(20);
+  });
+
+  it('GET /api/notifications/queue — rejects an invalid status with 422', async () => {
+    const res = await request(app)
+      .get('/api/notifications/queue?status=BOGUS')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.errors.some((e) => e.field === 'status')).toBe(true);
+  });
+
+  it('GET /api/notifications/summary — customer should receive 403', async () => {
+    const res = await request(app)
+      .get('/api/notifications/summary')
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(403);
   });
 });
 

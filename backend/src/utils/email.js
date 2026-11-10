@@ -98,7 +98,11 @@ const sendAppointmentConfirmationEmail = async (user, appointment, service) => {
 };
 
 const sendAppointmentReminderEmail = async (user, appointment, service) => {
-  await sendEmail({
+  const stylistLine = appointment.staff?.name
+    ? `<tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Stylist</td><td style="padding:8px;border:1px solid #e5e7eb">${appointment.staff.name}</td></tr>`
+    : '';
+
+  return sendEmail({
     to: user.email,
     subject: '⏰ Appointment Reminder — Tomorrow!',
     ics: buildAppointmentIcs(appointment, service),
@@ -110,11 +114,18 @@ const sendAppointmentReminderEmail = async (user, appointment, service) => {
           <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Service</td><td style="padding:8px;border:1px solid #e5e7eb">${service.name}</td></tr>
           <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Date</td><td style="padding:8px;border:1px solid #e5e7eb">${new Date(appointment.appointmentDate).toDateString()}</td></tr>
           <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Time</td><td style="padding:8px;border:1px solid #e5e7eb">${appointment.appointmentTime}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Duration</td><td style="padding:8px;border:1px solid #e5e7eb">${service.duration} minutes</td></tr>
+          ${stylistLine}
         </table>
         <p>We look forward to seeing you!</p>
+        <p style="color:#6b7280;font-size:12px;margin-top:24px">
+          Need to cancel or reschedule? Manage your booking from
+          <a href="${CLIENT_URL}/dashboard" style="color:#6d28d9">your dashboard</a>.
+          Reminder preferences can be changed there too.
+        </p>
       </div>
     `,
-    text: `Reminder: Your ${service.name} appointment is tomorrow at ${appointment.appointmentTime}`,
+    text: `Reminder: Your ${service.name} appointment is tomorrow at ${appointment.appointmentTime}. Manage your booking at ${CLIENT_URL}/dashboard`,
   });
 };
 

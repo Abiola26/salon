@@ -314,6 +314,9 @@ const appointmentService = {
             appointmentTime: dto.appointmentTime,
             notes: dto.notes !== undefined ? dto.notes : appointment.notes,
             status: 'PENDING', // Re-confirm after reschedule
+            // Phase 10: a rescheduled visit needs fresh reminders for the new date.
+            emailReminderSentAt: null,
+            smsReminderSentAt: null,
           },
           tx
         );

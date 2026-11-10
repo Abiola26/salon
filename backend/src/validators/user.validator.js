@@ -5,6 +5,9 @@ const { z } = require('zod');
 const updateProfileSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   phoneNumber: z.string().optional().nullable(),
+  // Reminder opt-ins (Phase 10). Transactional emails are never suppressed.
+  emailReminders: z.boolean({ invalid_type_error: 'emailReminders must be a boolean' }).optional(),
+  smsReminders: z.boolean({ invalid_type_error: 'smsReminders must be a boolean' }).optional(),
 });
 
 const changePasswordSchema = z
