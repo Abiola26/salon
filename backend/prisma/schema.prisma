@@ -91,6 +91,10 @@ model User {
   resetPasswordToken   String?
   resetPasswordExpiry  DateTime?
   loyaltyPoints        Int           @default(0)
+  // Reminder opt-ins (Phase 10) — transactional emails (confirmations,
+  // receipts, cancellations, refunds) are never suppressed by these.
+  emailReminders       Boolean       @default(true)
+  smsReminders         Boolean       @default(true)
   // Soft delete (Phase 3): deletion anonymizes PII (name/email/phoneNumber/password)
   // instead of hard-deleting — appointments, payments, reviews and audit logs
   // all reference the user, and a hard delete would CASCADE them away.
@@ -218,6 +222,9 @@ model Appointment {
   discountAmount  Decimal           @default(0) @db.Decimal(10, 2)
   pointsRedeemed  Int               @default(0)
   notes           String?
+  // Dedupe markers for reminder jobs (Phase 10).
+  emailReminderSentAt DateTime?
+  smsReminderSentAt   DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 

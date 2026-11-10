@@ -1,13 +1,12 @@
 'use strict';
 
 const cron = require('node-cron');
-const { prisma } = require('../config/db');
-const { sendAppointmentReminderEmail } = require('./email');
 const { processEmailQueue } = require('./emailQueue');
 const { SALON_TIMEZONE } = require('../config/env');
-const { salonDateString, addDaysToDateString } = require('./salonTime');
 const { completePastAppointments } = require('../jobs/appointmentCompletion.job');
+const { runAppointmentReminderJob } = require('../jobs/appointmentReminder.job');
 const logger = require('../config/logger');
+
 /**
  * Send reminder emails for appointments scheduled for tomorrow.
  * Runs daily at 9:00 AM in the salon's timezone.
@@ -17,34 +16,7 @@ const scheduleAppointmentReminders = () => {
     logger.info('⏰ Running appointment reminder cron job...');
 
     try {
-      const tomorrow = addDaysToDateString(salonDateString(), 1);
-
-      const appointments = await prisma.appointment.findMany({
-        where: {
-          appointmentDate: new Date(`${tomorrow}T00:00:00.000Z`),
-          status: { in: ['PENDING', 'CONFIRMED'] },
-        },
-        include: {
-          user: true,
-          service: true,
-        },
-      });
-
-      logger.info(`Found ${appointments.length} appointment(s) to remind`);
-
-      for (const appointment of appointments) {
-        try {
-          await sendAppointmentReminderEmail(
-            appointment.user,
-            appointment,
-            appointment.service
-          );
-        } catch (err) {
-          logger.error(
-            `Failed to send reminder for appointment ${appointment.id}: ${err.message}`
-          );
-        }
-      }
+      await runAppointmentReminderJob();
     } catch (error) {
       logger.error(`Reminder cron job failed: ${error.message}`);
     }

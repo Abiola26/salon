@@ -22,6 +22,8 @@ const anonymizeAndSoftDelete = async (user) => {
     resetPasswordToken: null,
     resetPasswordExpiry: null,
     loyaltyPoints: 0,
+    emailReminders: false,
+    smsReminders: false,
   });
   await refreshTokenRepository.revokeAllForUser(user.id);
 };

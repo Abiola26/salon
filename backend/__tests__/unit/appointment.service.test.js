@@ -424,6 +424,8 @@ describe('appointmentService', () => {
       expect(appointmentRepository.update).toHaveBeenCalledWith('a1', expect.objectContaining({
         appointmentTime: '10:00',
         status: 'PENDING',
+        emailReminderSentAt: null,
+        smsReminderSentAt: null,
       }), expect.anything());
     });
 
