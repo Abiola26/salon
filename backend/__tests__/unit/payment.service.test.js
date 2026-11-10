@@ -57,6 +57,14 @@ describe('paymentService', () => {
       ).rejects.toThrow('Cannot process payment for a cancelled appointment');
     });
 
+    it('throws when the appointment is a no-show', async () => {
+      appointmentRepository.findById.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'NO_SHOW' });
+
+      await expect(
+        paymentService.createPaymentIntent('u1', { appointmentId: 'a1', paymentType: 'FULL' })
+      ).rejects.toThrow('Cannot process payment for a no show appointment');
+    });
+
     it('throws when already fully paid', async () => {
       appointmentRepository.findById.mockResolvedValue({
         id: 'a1',

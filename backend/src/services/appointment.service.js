@@ -5,6 +5,7 @@ const serviceRepository = require('../repositories/service.repository');
 const staffRepository = require('../repositories/staff.repository');
 const couponRepository = require('../repositories/coupon.repository');
 const staffLeaveRepository = require('../repositories/staffLeave.repository');
+const paymentRepository = require('../repositories/payment.repository');
 const { prisma } = require('../config/db');
 const { sendAppointmentConfirmationEmail, sendCancellationEmail } = require('../utils/email');
 const { auditLog } = require('../utils/audit');
@@ -17,11 +18,22 @@ const {
   WORKING_HOURS,
 } = require('../config/workingHours');
 const { toCents, toDecimal2 } = require('../utils/money');
+const { zonedToUtc } = require('../utils/ics');
+const { CANCELLATION_POLICY } = require('../config/businessPolicy');
 const {
   POINTS_VALUE_IN_DOLLARS,
   MAX_POINTS_REDEMPTION_PCT,
   pointsForAmount,
 } = require('../config/loyalty');
+const logger = require('../config/logger');
+
+const toDateOnly = (value) =>
+  value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+
+const appointmentStartAt = (appointment) =>
+  zonedToUtc(toDateOnly(appointment.appointmentDate), appointment.appointmentTime);
+
+const humanStatus = (status) => String(status || '').toLowerCase().replace(/_/g, ' ');
 
 const appointmentService = {
   async createAppointment(userId, dto) {
@@ -244,6 +256,9 @@ const appointmentService = {
     if (appointment.status === 'COMPLETED') {
       throw ApiError.badRequest('Cannot reschedule a completed appointment');
     }
+    if (appointment.status === 'NO_SHOW') {
+      throw ApiError.badRequest('Cannot reschedule a no-show appointment');
+    }
 
     // ── Business Hours Check ─────────────────────────────────────────────────
     const requestedDate = new Date(dto.appointmentDate);
@@ -321,6 +336,20 @@ const appointmentService = {
     if (appointment.status === 'COMPLETED') {
       throw ApiError.badRequest('Cannot cancel a completed appointment');
     }
+    if (appointment.status === 'NO_SHOW') {
+      throw ApiError.badRequest('Cannot cancel a no-show appointment');
+    }
+
+    // Customers cancelling inside the free-cancellation window forfeit their
+    // deposit; admins always override and refund. Money movements happen after
+    // the status CAS (Stripe-first per payment, idempotent on retries).
+    const hoursUntilStart =
+      (appointmentStartAt(appointment).getTime() - Date.now()) / (60 * 60 * 1000);
+    const lateCancel =
+      role !== 'ADMIN' &&
+      CANCELLATION_POLICY.forfeitDepositOnLateCancel &&
+      hoursUntilStart < CANCELLATION_POLICY.freeCancelHours;
+    const depositForfeited = Boolean(lateCancel && toCents(appointment.amountPaid) > 0);
 
     // Status flip, coupon-capacity release and points refund commit together:
     // a crash mid-way can no longer leak coupon capacity or lose redeemed points.
@@ -330,7 +359,7 @@ const appointmentService = {
         data: { status: 'CANCELLED' },
       });
       if (claimed.count === 0) {
-        throw ApiError.badRequest('Appointment is already cancelled or completed');
+        throw ApiError.badRequest('Appointment is already cancelled, completed, or a no-show');
       }
 
       if (appointment.couponId) {
@@ -355,24 +384,100 @@ const appointmentService = {
       });
     });
 
-    // Fire-and-forget cancellation email
-    sendCancellationEmail(appointment.user, appointment, appointment.service).catch(() => {});
+    // Refund every captured payment unless the customer cancelled too late.
+    // A Stripe failure must never block the cancellation itself - it is logged
+    // and the admin can retry from the payments screen (same idempotency key).
+    let refundedPayments = 0;
+    let refundFailed = false;
+    if (!lateCancel) {
+      try {
+        const paymentService = require('./payment.service');
+        const payments = await paymentRepository.findByAppointmentId(id);
+        for (const payment of payments.filter((p) => p.status === 'SUCCEEDED')) {
+          try {
+            await paymentService.initiateRefund(payment.id, userId, ipAddress);
+            refundedPayments += 1;
+          } catch (err) {
+            refundFailed = true;
+            logger.error(
+              `Auto-refund failed for payment ${payment.id} on cancelled appointment ${id}: ${err.message}`
+            );
+          }
+        }
+      } catch (err) {
+        refundFailed = true;
+        logger.error(`Could not load payments for cancelled appointment ${id}: ${err.message}`);
+      }
+    }
+
+    // Fire-and-forget cancellation email (policy outcome included)
+    sendCancellationEmail(appointment.user, appointment, appointment.service, {
+      depositForfeited,
+      freeCancelHours: CANCELLATION_POLICY.freeCancelHours,
+      refundedPayments,
+    }).catch(() => {});
 
     await auditLog({
       userId,
       action: 'CANCEL_APPOINTMENT',
-      details: `Cancelled appointment ${id} for user ${appointment.userId}`,
+      details:
+        `Cancelled appointment ${id} for user ${appointment.userId}` +
+        (depositForfeited ? ' (deposit forfeited: late cancellation)' : '') +
+        (refundedPayments > 0 ? ` (${refundedPayments} payment(s) refunded)` : ''),
       ipAddress,
     });
 
-    return cancelled;
+    return { ...cancelled, depositForfeited, refundedPayments, refundFailed };
+  },
+
+  async markNoShow(id, actorId = null, ipAddress = null) {
+    const appointment = await appointmentRepository.findByIdRaw(id);
+    if (!appointment) throw ApiError.notFound('Appointment not found');
+
+    if (!['PENDING', 'CONFIRMED'].includes(appointment.status)) {
+      throw ApiError.badRequest(
+        `Cannot mark a ${humanStatus(appointment.status)} appointment as a no-show`
+      );
+    }
+
+    if (appointmentStartAt(appointment).getTime() > Date.now()) {
+      throw ApiError.badRequest('Cannot mark a future appointment as a no-show');
+    }
+
+    // CAS so a concurrent cancel/confirm can never be overwritten.
+    const claimed = await prisma.appointment.updateMany({
+      where: { id, status: { in: ['PENDING', 'CONFIRMED'] } },
+      data: { status: 'NO_SHOW' },
+    });
+    if (claimed.count === 0) {
+      const current = await appointmentRepository.findByIdRaw(id);
+      throw ApiError.badRequest(
+        `Cannot mark an appointment that is ${humanStatus(current?.status)} as a no-show`
+      );
+    }
+
+    const updated = await appointmentRepository.findById(id);
+
+    await auditLog({
+      userId: actorId,
+      action: 'MARK_NO_SHOW',
+      details: `Marked appointment ${id} for user ${appointment.userId} as no-show`,
+      ipAddress,
+    });
+
+    return {
+      ...updated,
+      depositForfeited: Boolean(
+        CANCELLATION_POLICY.noShowForfeitsDeposit && toCents(appointment.amountPaid) > 0
+      ),
+    };
   },
 
   async confirmAppointment(id, actorId = null, ipAddress = null) {
     const appointment = await appointmentRepository.findByIdRaw(id);
     if (!appointment) throw ApiError.notFound('Appointment not found');
-    if (appointment.status === 'CANCELLED' || appointment.status === 'COMPLETED') {
-      throw ApiError.badRequest(`Cannot confirm a ${appointment.status.toLowerCase()} appointment`);
+    if (['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status)) {
+      throw ApiError.badRequest(`Cannot confirm a ${humanStatus(appointment.status)} appointment`);
     }
 
     // CAS: only PENDING → CONFIRMED, so a concurrent cancel cannot be resurrected.
@@ -384,7 +489,7 @@ const appointmentService = {
       const current = await appointmentRepository.findByIdRaw(id);
       throw ApiError.badRequest(
         current
-          ? `Cannot confirm an appointment that is ${current.status.toLowerCase()}`
+          ? `Cannot confirm an appointment that is ${humanStatus(current.status)}`
           : 'Appointment not found'
       );
     }

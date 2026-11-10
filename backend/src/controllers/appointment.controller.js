@@ -59,6 +59,16 @@ const appointmentController = {
     return ApiResponse.ok(res, 'Appointment confirmed successfully', appointment);
   }),
 
+  // Admin: mark appointment as a no-show (deposit forfeited)
+  markNoShow: asyncHandler(async (req, res) => {
+    const appointment = await appointmentService.markNoShow(
+      req.params.id,
+      req.user?.id,
+      req.ip
+    );
+    return ApiResponse.ok(res, 'Appointment marked as no-show', appointment);
+  }),
+
   // Public: get available time slots for a given date (+ optional service + optional staff)
   getAvailableSlots: asyncHandler(async (req, res) => {
     const { date, serviceId, staffId } = req.query;

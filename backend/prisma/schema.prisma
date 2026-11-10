@@ -24,6 +24,7 @@ enum AppointmentStatus {
   CONFIRMED
   CANCELLED
   COMPLETED
+  NO_SHOW
 }
 
 enum PaymentStatus {
@@ -45,6 +46,7 @@ enum AuditAction {
   DELETE_SERVICE
   CONFIRM_APPOINTMENT
   CANCEL_APPOINTMENT
+  MARK_NO_SHOW
   DELETE_USER
   CREATE_STAFF
   UPDATE_STAFF

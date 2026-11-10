@@ -75,4 +75,11 @@ router.delete('/:id', authenticate, appointmentController.cancelAppointment);
  */
 router.patch('/:id/confirm', authenticate, adminOnly, appointmentController.confirmAppointment);
 
+/**
+ * @route   PATCH /api/appointments/:id/no-show
+ * @desc    Mark a past appointment as a no-show (Admin only)
+ * @access  Admin
+ */
+router.patch('/:id/no-show', authenticate, adminOnly, appointmentController.markNoShow);
+
 module.exports = router;

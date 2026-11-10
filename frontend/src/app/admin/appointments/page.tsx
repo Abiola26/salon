@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  UserX,
 } from "lucide-react";
 import Calendar from "@/components/Calendar";
 
@@ -40,7 +41,7 @@ interface Appointment {
   id: string;
   appointmentDate: string;
   appointmentTime: string;
-  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
+  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
   paymentStatus: "UNPAID" | "PARTIAL" | "PAID";
   amountPaid: string;
   notes?: string | null;
@@ -69,6 +70,8 @@ export default function AdminAppointmentsPage() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const [noShowConfirmId, setNoShowConfirmId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Rescheduling states
   const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
@@ -144,12 +147,13 @@ export default function AdminAppointmentsPage() {
   // Mutations
   const handleConfirm = async (id: string) => {
     setConfirmingId(id);
+    setActionError(null);
     try {
       await api.patch(`/appointments/${id}/confirm`);
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     } catch (err: unknown) {
-      console.error(getApiErrorMessage(err, "Failed to confirm appointment."));
+      setActionError(getApiErrorMessage(err, "Failed to confirm appointment."));
     } finally {
       setConfirmingId(null);
     }
@@ -157,14 +161,27 @@ export default function AdminAppointmentsPage() {
 
   const handleCancel = async (id: string) => {
     setCancellingId(id);
+    setActionError(null);
     try {
       await api.delete(`/appointments/${id}`);
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
     } catch (err: unknown) {
-      console.error(getApiErrorMessage(err, "Failed to cancel appointment."));
+      setActionError(getApiErrorMessage(err, "Failed to cancel appointment."));
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleNoShow = async (id: string) => {
+    setNoShowConfirmId(null);
+    setActionError(null);
+    try {
+      await api.patch(`/appointments/${id}/no-show`);
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+    } catch (err: unknown) {
+      setActionError(getApiErrorMessage(err, "Failed to mark appointment as no-show."));
     }
   };
 
@@ -274,8 +291,9 @@ export default function AdminAppointmentsPage() {
                 <option value="ALL">All Statuses</option>
                 <option value="PENDING">PENDING</option>
                 <option value="CONFIRMED">CONFIRMED</option>
-                <option value="CANCELLED">CANCELLED</option>
+                  <option value="CANCELLED">CANCELLED</option>
                 <option value="COMPLETED">COMPLETED</option>
+                <option value="NO_SHOW">NO_SHOW</option>
               </select>
             </div>
 
@@ -336,7 +354,16 @@ export default function AdminAppointmentsPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            
+            {actionError && (
+              <div
+                role="alert"
+                className="bg-red-950/40 border border-red-900/40 text-red-300 p-3 rounded-xl flex items-start gap-2 text-xs"
+              >
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
             {/* Table wrapper */}
             <div className="glass-panel rounded-2xl overflow-hidden border border-zinc-900/60">
               <div className="overflow-x-auto w-full">
@@ -357,6 +384,12 @@ export default function AdminAppointmentsPage() {
                       const amountPaid = parseFloat(appt.amountPaid);
                       const totalCost = parseFloat(appt.service.price);
                       const remaining = totalCost - amountPaid;
+                      const appointmentStart = parseLocalDate(appt.appointmentDate);
+                      const [startHour, startMinute] = appt.appointmentTime
+                        .split(":")
+                        .map(Number);
+                      appointmentStart.setHours(startHour, startMinute, 0, 0);
+                      const isPastAppointment = appointmentStart < new Date();
 
                       return (
                         <tr key={appt.id} className="hover:bg-zinc-950/15 transition duration-150">
@@ -462,6 +495,8 @@ export default function AdminAppointmentsPage() {
                                   ? "bg-[#E60654]/10 text-[#E60654] border border-[#E60654]/20"
                                   : appt.status === "CANCELLED"
                                   ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                  : appt.status === "NO_SHOW"
+                                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                                   : "bg-zinc-800 text-zinc-400 border border-zinc-700"
                               }`}
                             >
@@ -486,7 +521,23 @@ export default function AdminAppointmentsPage() {
                                   )}
                                 </button>
                               )}
-                              {appt.status !== "CANCELLED" && appt.status !== "COMPLETED" && (
+                              {["PENDING", "CONFIRMED"].includes(appt.status) &&
+                                isPastAppointment && (
+                                  <button
+                                    disabled={!!noShowConfirmId}
+                                    onClick={() => {
+                                      setActionError(null);
+                                      setNoShowConfirmId(appt.id);
+                                    }}
+                                    className="h-8 w-8 rounded-lg bg-amber-950/40 hover:bg-amber-900 border border-amber-900/40 text-amber-400 flex items-center justify-center transition cursor-pointer"
+                                    title="Mark No-Show"
+                                  >
+                                    <UserX className="h-4 w-4" />
+                                  </button>
+                                )}
+                              {appt.status !== "CANCELLED" &&
+                                appt.status !== "COMPLETED" &&
+                                appt.status !== "NO_SHOW" && (
                                 <>
                                   <button
                                     onClick={() => {
@@ -695,7 +746,9 @@ export default function AdminAppointmentsPage() {
                 Cancel Appointment?
               </h2>
               <p className="text-zinc-400 text-sm">
-                Are you sure you want to cancel this booking? This action will refund any loyalty points used and mark the appointment as cancelled.
+                Are you sure you want to cancel this booking? Any captured payments are
+                refunded, loyalty points used are restored, and the appointment is marked
+                cancelled.
               </p>
               <div className="flex gap-3">
                 <button
@@ -713,6 +766,35 @@ export default function AdminAppointmentsPage() {
                   className="flex-1 bg-red-700 hover:bg-red-600 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Confirm Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No-Show Confirmation Modal */}
+        {noShowConfirmId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="glass-panel w-full max-w-sm rounded-2xl border border-amber-900/40 p-6 space-y-5">
+              <h2 className="text-lg font-extrabold text-white">
+                Mark as No-Show?
+              </h2>
+              <p className="text-zinc-400 text-sm">
+                The appointment will be marked NO_SHOW and any deposit already paid is
+                forfeited per the cancellation policy. This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setNoShowConfirmId(null)}
+                  className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer"
+                >
+                  Keep Booking
+                </button>
+                <button
+                  onClick={() => handleNoShow(noShowConfirmId)}
+                  className="flex-1 bg-amber-700 hover:bg-amber-600 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  Confirm No-Show
                 </button>
               </div>
             </div>
