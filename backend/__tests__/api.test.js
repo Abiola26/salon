@@ -18,6 +18,7 @@ let customerToken = '';
 let createdServiceId = '';
 let createdAppointmentId = '';
 let noShowAppointmentId = '';
+let completeAppointmentId = '';
 let createdStaffId = '';
 let createdCouponId = '';
 let createdCouponCode = '';
@@ -312,6 +313,68 @@ describe('Appointments API', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.message).toContain('no show');
+  });
+
+  it('PATCH /api/appointments/:id/complete — rejects a future appointment (400)', async () => {
+    if (!createdServiceId || !customerToken) return;
+
+    const created = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        appointmentDate: tomorrowStr,
+        appointmentTime: '14:00',
+        notes: 'Completion integration test booking',
+      });
+
+    expect(created.statusCode).toBe(201);
+    completeAppointmentId = created.body.data.id;
+
+    await request(app)
+      .patch(`/api/appointments/${completeAppointmentId}/confirm`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const res = await request(app)
+      .patch(`/api/appointments/${completeAppointmentId}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toContain('not finished');
+  });
+
+  it('PATCH /api/appointments/:id/complete — customer is forbidden (403)', async () => {
+    if (!completeAppointmentId) return;
+    const res = await request(app)
+      .patch(`/api/appointments/${completeAppointmentId}/complete`)
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('PATCH /api/appointments/:id/complete — admin marks a finished appointment COMPLETED', async () => {
+    if (!completeAppointmentId) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    await prisma.appointment.update({
+      where: { id: completeAppointmentId },
+      data: { appointmentDate: yesterday, appointmentTime: '10:00' },
+    });
+
+    const res = await request(app)
+      .patch(`/api/appointments/${completeAppointmentId}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.status).toBe('COMPLETED');
+
+    const repeat = await request(app)
+      .patch(`/api/appointments/${completeAppointmentId}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(repeat.statusCode).toBe(400);
+    expect(repeat.body.message).toContain('already completed');
   });
 });
 

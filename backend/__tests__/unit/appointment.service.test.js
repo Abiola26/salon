@@ -391,8 +391,27 @@ describe('appointmentService', () => {
       ).rejects.toThrow('Cannot reschedule a cancelled appointment');
     });
 
+    it('rejects rescheduling an appointment that has already started', async () => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      appointmentRepository.findByIdRaw.mockResolvedValue({
+        id: 'a1',
+        userId: 'u1',
+        status: 'CONFIRMED',
+        appointmentDate: yesterday,
+        appointmentTime: '10:00',
+      });
+
+      await expect(
+        appointmentService.rescheduleAppointment('a1', 'u1', 'CUSTOMER', {
+          appointmentDate: '2026-06-29',
+          appointmentTime: '10:00',
+        })
+      ).rejects.toThrow('Cannot reschedule an appointment that has already started');
+    });
+
     it('reschedules appointment successfully', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1', appointmentDate: new Date('2030-01-05'), appointmentTime: '10:00' });
       serviceRepository.findById.mockResolvedValue({ duration: 30 });
       appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       appointmentRepository.update.mockResolvedValue({ id: 'a1' });
@@ -409,7 +428,7 @@ describe('appointmentService', () => {
     });
 
     it('reschedules when the service record is missing (duration treated as 0)', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 'gone', staffId: 'st1' });
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 'gone', staffId: 'st1', appointmentDate: new Date('2030-01-05'), appointmentTime: '10:00' });
       serviceRepository.findById.mockResolvedValue(null); // service deleted â†’ skip hours check
       appointmentRepository.checkSlotConflict.mockResolvedValue(null);
       appointmentRepository.update.mockResolvedValue({ id: 'a1' });
@@ -431,7 +450,7 @@ describe('appointmentService', () => {
     });
 
     it('throws when the new slot overlaps an existing booking', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1', appointmentDate: new Date('2030-01-05'), appointmentTime: '10:00' });
       serviceRepository.findById.mockResolvedValue({ duration: 30 });
       appointmentRepository.checkSlotConflict.mockResolvedValue({ appointmentTime: '10:15' });
 
@@ -445,7 +464,7 @@ describe('appointmentService', () => {
     });
 
     it('throws when the assigned stylist is on leave on the new date', async () => {
-      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1' });
+      appointmentRepository.findByIdRaw.mockResolvedValue({ id: 'a1', userId: 'u1', status: 'PENDING', serviceId: 's1', staffId: 'st1', appointmentDate: new Date('2030-01-05'), appointmentTime: '10:00' });
       serviceRepository.findById.mockResolvedValue({ duration: 30 });
       staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
 
@@ -504,6 +523,15 @@ describe('appointmentService', () => {
       await expect(appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')).rejects.toThrow(
         'Cannot cancel a no-show appointment'
       );
+    });
+
+    it('rejects a customer cancelling an appointment that has already started', async () => {
+      appointmentRepository.findById.mockResolvedValue(appointmentAt(-1));
+
+      await expect(
+        appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER')
+      ).rejects.toThrow('Cannot cancel an appointment that has already started');
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
     });
 
     it('cancels appointment successfully, refunds loyalty points and captured payments', async () => {
@@ -707,6 +735,102 @@ describe('appointmentService', () => {
       await expect(appointmentService.markNoShow('a1', 'admin-1')).rejects.toThrow(
         'Cannot mark an appointment that is cancelled as a no-show'
       );
+    });
+  });
+
+  describe('completeAppointment', () => {
+    const dateOffset = (days) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${d.getFullYear()}-${month}-${day}`;
+    };
+    const appointment = (overrides = {}) => ({
+      id: 'a1',
+      userId: 'u1',
+      status: 'CONFIRMED',
+      appointmentDate: new Date(dateOffset(-1)),
+      appointmentTime: '10:00',
+      service: { duration: 30 },
+      ...overrides,
+    });
+
+    it('throws when not found', async () => {
+      appointmentRepository.findById.mockResolvedValue(null);
+
+      await expect(appointmentService.completeAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Appointment not found'
+      );
+    });
+
+    it('rejects an already-completed appointment', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointment({ status: 'COMPLETED' })
+      );
+
+      await expect(appointmentService.completeAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Appointment is already completed'
+      );
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an appointment that has not finished yet', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointment({ appointmentDate: new Date(dateOffset(1)) })
+      );
+
+      await expect(appointmentService.completeAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot complete an appointment that has not finished yet'
+      );
+      expect(prisma.appointment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a pending appointment', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointment({ status: 'PENDING' })
+      );
+
+      await expect(appointmentService.completeAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot complete a pending appointment'
+      );
+    });
+
+    it('marks a finished appointment COMPLETED via CAS and audits it', async () => {
+      appointmentRepository.findById
+        .mockResolvedValueOnce(appointment())
+        .mockResolvedValueOnce(appointment({ status: 'COMPLETED' }));
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await appointmentService.completeAppointment(
+        'a1',
+        'admin-1',
+        '127.0.0.1'
+      );
+
+      expect(prisma.appointment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'a1', status: 'CONFIRMED' },
+        data: { status: 'COMPLETED' },
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ id: 'a1', status: 'COMPLETED' })
+      );
+      expect(auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'COMPLETE_APPOINTMENT' })
+      );
+    });
+
+    it('rejects when a concurrent request changed the status first', async () => {
+      appointmentRepository.findById.mockResolvedValueOnce(appointment());
+      appointmentRepository.findByIdRaw.mockResolvedValueOnce(
+        appointment({ status: 'CANCELLED' })
+      );
+      prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(appointmentService.completeAppointment('a1', 'admin-1')).rejects.toThrow(
+        'Cannot complete an appointment that is cancelled'
+      );
+      expect(auditLog).not.toHaveBeenCalled();
     });
   });
 

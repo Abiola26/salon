@@ -18,7 +18,7 @@ const {
   WORKING_HOURS,
 } = require('../config/workingHours');
 const { toCents, toDecimal2 } = require('../utils/money');
-const { zonedToUtc } = require('../utils/ics');
+const { appointmentStartAt, appointmentEndAt } = require('../utils/salonTime');
 const { CANCELLATION_POLICY } = require('../config/businessPolicy');
 const {
   POINTS_VALUE_IN_DOLLARS,
@@ -26,12 +26,6 @@ const {
   pointsForAmount,
 } = require('../config/loyalty');
 const logger = require('../config/logger');
-
-const toDateOnly = (value) =>
-  value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
-
-const appointmentStartAt = (appointment) =>
-  zonedToUtc(toDateOnly(appointment.appointmentDate), appointment.appointmentTime);
 
 const humanStatus = (status) => String(status || '').toLowerCase().replace(/_/g, ' ');
 
@@ -259,6 +253,12 @@ const appointmentService = {
     if (appointment.status === 'NO_SHOW') {
       throw ApiError.badRequest('Cannot reschedule a no-show appointment');
     }
+    if (
+      role !== 'ADMIN' &&
+      appointmentStartAt(appointment).getTime() <= Date.now()
+    ) {
+      throw ApiError.badRequest('Cannot reschedule an appointment that has already started');
+    }
 
     // ── Business Hours Check ─────────────────────────────────────────────────
     const requestedDate = new Date(dto.appointmentDate);
@@ -338,6 +338,12 @@ const appointmentService = {
     }
     if (appointment.status === 'NO_SHOW') {
       throw ApiError.badRequest('Cannot cancel a no-show appointment');
+    }
+    if (
+      role !== 'ADMIN' &&
+      appointmentStartAt(appointment).getTime() <= Date.now()
+    ) {
+      throw ApiError.badRequest('Cannot cancel an appointment that has already started');
     }
 
     // Customers cancelling inside the free-cancellation window forfeit their
@@ -471,6 +477,47 @@ const appointmentService = {
         CANCELLATION_POLICY.noShowForfeitsDeposit && toCents(appointment.amountPaid) > 0
       ),
     };
+  },
+
+  async completeAppointment(id, actorId = null, ipAddress = null) {
+    const appointment = await appointmentRepository.findById(id);
+    if (!appointment) throw ApiError.notFound('Appointment not found');
+
+    if (appointment.status === 'COMPLETED') {
+      throw ApiError.badRequest('Appointment is already completed');
+    }
+    if (appointment.status !== 'CONFIRMED') {
+      throw ApiError.badRequest(
+        `Cannot complete a ${humanStatus(appointment.status)} appointment`
+      );
+    }
+
+    const endAt = appointmentEndAt(appointment, appointment.service?.duration || 0);
+    if (endAt.getTime() > Date.now()) {
+      throw ApiError.badRequest('Cannot complete an appointment that has not finished yet');
+    }
+
+    const claimed = await prisma.appointment.updateMany({
+      where: { id, status: 'CONFIRMED' },
+      data: { status: 'COMPLETED' },
+    });
+    if (claimed.count === 0) {
+      const current = await appointmentRepository.findByIdRaw(id);
+      throw ApiError.badRequest(
+        `Cannot complete an appointment that is ${humanStatus(current?.status)}`
+      );
+    }
+
+    const completed = await appointmentRepository.findById(id);
+
+    await auditLog({
+      userId: actorId,
+      action: 'COMPLETE_APPOINTMENT',
+      details: `Marked appointment ${id} for user ${appointment.userId} as completed`,
+      ipAddress,
+    });
+
+    return completed;
   },
 
   async confirmAppointment(id, actorId = null, ipAddress = null) {

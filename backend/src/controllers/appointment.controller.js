@@ -59,6 +59,16 @@ const appointmentController = {
     return ApiResponse.ok(res, 'Appointment confirmed successfully', appointment);
   }),
 
+  // Admin: mark a finished appointment as completed
+  completeAppointment: asyncHandler(async (req, res) => {
+    const appointment = await appointmentService.completeAppointment(
+      req.params.id,
+      req.user?.id,
+      req.ip
+    );
+    return ApiResponse.ok(res, 'Appointment marked as completed', appointment);
+  }),
+
   // Admin: mark appointment as a no-show (deposit forfeited)
   markNoShow: asyncHandler(async (req, res) => {
     const appointment = await appointmentService.markNoShow(

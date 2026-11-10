@@ -76,6 +76,13 @@ router.delete('/:id', authenticate, appointmentController.cancelAppointment);
 router.patch('/:id/confirm', authenticate, adminOnly, appointmentController.confirmAppointment);
 
 /**
+ * @route   PATCH /api/appointments/:id/complete
+ * @desc    Mark a finished appointment as completed (Admin only)
+ * @access  Admin
+ */
+router.patch('/:id/complete', authenticate, adminOnly, appointmentController.completeAppointment);
+
+/**
  * @route   PATCH /api/appointments/:id/no-show
  * @desc    Mark a past appointment as a no-show (Admin only)
  * @access  Admin
