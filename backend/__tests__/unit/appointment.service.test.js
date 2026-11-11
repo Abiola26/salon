@@ -895,6 +895,11 @@ describe('appointmentService', () => {
 
     it('returns list of slots and checks blocked time overlapping', async () => {
       serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findById.mockResolvedValue({
+        id: 'st1',
+        isActive: true,
+        services: [{ id: 's1' }],
+      });
       // 2026-06-29 is Monday (open)
       // Appointment at 10:00 for 30 minutes blocks 10:00 to 10:30
       appointmentRepository.findBookedSlots.mockResolvedValue([
@@ -913,6 +918,11 @@ describe('appointmentService', () => {
 
     it('returns no slots with a leave reason when the stylist is off', async () => {
       serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findById.mockResolvedValue({
+        id: 'st1',
+        isActive: true,
+        services: [{ id: 's1' }],
+      });
       staffLeaveRepository.findStaffIdsOnLeave.mockResolvedValue(['st1']);
 
       const result = await appointmentService.getAvailableSlots('2026-06-29', 's1', 'st1');
@@ -922,6 +932,28 @@ describe('appointmentService', () => {
       expect(result.reason).toContain('on leave');
       expect(result.slots).toEqual([]);
       expect(appointmentRepository.findBookedSlots).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown or inactive stylist', async () => {
+      serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        appointmentService.getAvailableSlots('2026-06-29', 's1', 'st-missing')
+      ).rejects.toThrow('Selected stylist not found or inactive');
+    });
+
+    it('rejects a stylist who does not offer the requested service', async () => {
+      serviceRepository.findById.mockResolvedValue({ duration: 30, isActive: true });
+      staffRepository.findById.mockResolvedValue({
+        id: 'st1',
+        isActive: true,
+        services: [{ id: 's2' }],
+      });
+
+      await expect(
+        appointmentService.getAvailableSlots('2026-06-29', 's1', 'st1')
+      ).rejects.toThrow('Selected stylist does not offer this service');
     });
 
     it('returns no slots when every stylist for the service is on leave', async () => {

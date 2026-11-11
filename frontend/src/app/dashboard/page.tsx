@@ -31,6 +31,7 @@ import {
   Bell,
   Mail,
   Smartphone,
+  RefreshCw,
 } from "lucide-react";
 
 // Load Stripe
@@ -55,6 +56,7 @@ interface Appointment {
   amountPaid: string;
   notes?: string | null;
   service: Service;
+  staff?: { id: string; name: string } | null;
 }
 
 interface Slot {
@@ -263,6 +265,12 @@ export default function CustomerDashboardPage() {
   };
 
   const displayedAppts = getFilteredAppointments();
+
+  const handleRebook = (appt: Appointment) => {
+    const params = new URLSearchParams({ serviceId: appt.service.id });
+    if (appt.staff?.id) params.set("staffId", appt.staff.id);
+    router.push(`/book?${params.toString()}`);
+  };
 
   // Available Slots query for rescheduling
   const formattedRescheduleDate = formatLocalDate(rescheduleDate);
@@ -865,19 +873,37 @@ export default function CustomerDashboardPage() {
                       </>
                     )}
                     {appt.status === "CANCELLED" && (
-                      <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5 py-4">
-                        <XCircle className="h-4 w-4 text-red-500" />
-                        <span>Reservation Cancelled</span>
+                      <div className="w-full space-y-2">
+                        <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5">
+                          <XCircle className="h-4 w-4 text-red-500" />
+                          <span>Reservation Cancelled</span>
+                        </div>
+                        <button
+                          onClick={() => handleRebook(appt)}
+                          className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Book Again
+                        </button>
                       </div>
                     )}
                     {appt.status === "NO_SHOW" && (
-                      <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5 py-4">
-                        <XCircle className="h-4 w-4 text-amber-500" />
-                        <span>Missed Appointment</span>
+                      <div className="w-full space-y-2">
+                        <div className="text-center text-xs text-zinc-500 flex items-center justify-center gap-1.5">
+                          <XCircle className="h-4 w-4 text-amber-500" />
+                          <span>Missed Appointment</span>
+                        </div>
+                        <button
+                          onClick={() => handleRebook(appt)}
+                          className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Book Again
+                        </button>
                       </div>
                     )}
                     {appt.status === "COMPLETED" && (
-                      <div className="w-full">
+                      <div className="w-full space-y-2">
                         {reviewedApptIds.has(appt.id) ? (
                           <div className="flex flex-col gap-1 w-full text-center py-2">
                             <span className="text-xs text-green-400 font-bold flex items-center justify-center gap-1">
@@ -899,6 +925,13 @@ export default function CustomerDashboardPage() {
                             Write a Review
                           </button>
                         )}
+                        <button
+                          onClick={() => handleRebook(appt)}
+                          className="w-full bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Book Again
+                        </button>
                       </div>
                     )}
                   </div>

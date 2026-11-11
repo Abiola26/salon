@@ -19,3 +19,16 @@ export const formatLocalDate = (date: Date): string => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+/**
+ * Return the first open business day on or after `from`.
+ * `openDays` uses JS weekday numbers (0 = Sunday … 6 = Saturday).
+ */
+export const nextOpenDate = (from: Date, openDays: number[]): Date => {
+  const candidate = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  for (let i = 0; i < 7; i++) {
+    if (openDays.includes(candidate.getDay())) return candidate;
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  return candidate;
+};
