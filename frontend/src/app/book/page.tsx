@@ -8,9 +8,10 @@ import { Elements } from "@stripe/react-stripe-js";
 import confetti from "canvas-confetti";
 import { useAuthStore, type User as AuthUser } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
-import { formatLocalDate } from "@/lib/date";
+import { formatLocalDate, nextOpenDate } from "@/lib/date";
 import { queryKeys } from "@/lib/queryKeys";
 import CheckoutForm from "@/components/CheckoutForm";
+import BookingCalendar from "@/components/BookingCalendar";
 import {
   Scissors,
   Calendar as CalendarIcon,
@@ -33,6 +34,8 @@ import {
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
 );
+
+const DEFAULT_OPEN_DAYS = [1, 2, 3, 4, 5, 6];
 
 interface Service {
   id: string;
@@ -73,13 +76,15 @@ function BookingWizardContent() {
   const searchParams = useSearchParams();
   const { user, setAuth, isHydrated } = useAuthStore();
 
-  // Steps: 1=Service, 2=Date&Time, 3=Stylist, 4=Confirm&Auth, 5=Pay, 6=Success
+  // Steps: 1=Service, 2=Stylist, 3=Date&Time, 4=Confirm&Auth, 5=Pay, 6=Success
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() =>
+    nextOpenDate(new Date(), DEFAULT_OPEN_DAYS)
+  );
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedStaff, setSelectedStaff] = useState<Staff | null | "any">(
-    "any"
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(() =>
+    searchParams.get("staffId")
   );
   const [notes, setNotes] = useState("");
   const [paymentType, setPaymentType] = useState<"DEPOSIT" | "FULL">("DEPOSIT");
@@ -124,6 +129,11 @@ function BookingWizardContent() {
   const freeCancelHours = Number(
     configResponse?.data?.cancellationPolicy?.freeCancelHours ?? 48
   );
+  const openDays: number[] = Array.isArray(
+    configResponse?.data?.workingHours?.openDays
+  )
+    ? configResponse.data.workingHours.openDays
+    : DEFAULT_OPEN_DAYS;
   const depositLabel = `$${
     depositAmountConfig % 1 === 0
       ? depositAmountConfig
@@ -154,6 +164,12 @@ function BookingWizardContent() {
   });
   const staffList: Staff[] = staffResponse?.data || [];
 
+  // Rebook links may pre-select the stylist; fall back to "Any Stylist" when
+  // the stylist no longer offers the service or has been removed.
+  const selectedStaff: Staff | "any" =
+    (selectedStaffId && staffList.find((s) => s.id === selectedStaffId)) ||
+    "any";
+
   // Handle service pre-selection via URL param
   const preSelectedId = searchParams.get("serviceId");
   useEffect(() => {
@@ -181,7 +197,7 @@ function BookingWizardContent() {
   // Fetch Available Slots
   const formattedDate = formatLocalDate(selectedDate);
   const staffIdParam =
-    selectedStaff && selectedStaff !== "any" ? selectedStaff.id : undefined;
+    selectedStaff !== "any" ? selectedStaff.id : undefined;
 
   const {
     data: slotsResponse,
@@ -222,18 +238,6 @@ function BookingWizardContent() {
   const finalPrice = Math.max(0, servicePrice - totalDiscount);
   const deposit = Math.min(depositAmountConfig, finalPrice);
   const amountToPay = paymentType === "DEPOSIT" ? deposit : finalPrice;
-
-  const getNextDays = () => {
-    const list = [];
-    const today = new Date();
-    for (let i = 0; i < 14; i++) {
-      const d = new Date();
-      d.setDate(today.getDate() + i);
-      list.push(d);
-    }
-    return list;
-  };
-  const dates = getNextDays();
 
   const applyCouponMutation = useMutation({
     mutationFn: async (code: string) => {
@@ -320,7 +324,7 @@ function BookingWizardContent() {
       }
 
       const staffId =
-        selectedStaff && selectedStaff !== "any" ? selectedStaff.id : undefined;
+        selectedStaff !== "any" ? selectedStaff.id : undefined;
 
       const appointmentRes = await api.post("/appointments", {
         serviceId: selectedService.id,
@@ -376,16 +380,10 @@ function BookingWizardContent() {
     setStep(6);
   };
 
-
-  const getDayName = (date: Date) =>
-    date.toLocaleDateString("en-US", { weekday: "short" });
-  const getMonthName = (date: Date) =>
-    date.toLocaleDateString("en-US", { month: "short" });
-
   const stepLabels = [
     { num: 1, label: "Service", icon: Scissors },
-    { num: 2, label: "Schedule", icon: CalendarIcon },
-    { num: 3, label: "Stylist", icon: Users },
+    { num: 2, label: "Stylist", icon: Users },
+    { num: 3, label: "Schedule", icon: CalendarIcon },
     { num: 4, label: "Confirm", icon: User },
     { num: 5, label: "Payment", icon: CreditCard },
     { num: 6, label: "Done", icon: CheckCircle },
@@ -467,7 +465,8 @@ function BookingWizardContent() {
                     key={service.id}
                     onClick={() => {
                       setSelectedService(service);
-                      setSelectedStaff("any");
+                      setSelectedStaffId(null);
+                      setSelectedTime(null);
                       setStep(2);
                     }}
                     className={`text-left glass-card p-4 sm:p-6 rounded-2xl relative overflow-hidden transition-all duration-300 border flex flex-col justify-between cursor-pointer ${
@@ -505,13 +504,13 @@ function BookingWizardContent() {
           </div>
         )}
 
-        {/* ─── STEP 2: DATE & TIME SELECT ─── */}
-        {step === 2 && selectedService && (
+        {/* ─── STEP 3: DATE & TIME SELECT ─── */}
+        {step === 3 && selectedService && (
           <div className="space-y-4 sm:space-y-6">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 sm:gap-0">
               <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                2. Select Date & Time
+                3. Select Date & Time
               </h2>
               <button
                 onClick={() => setStep(1)}
@@ -521,38 +520,16 @@ function BookingWizardContent() {
               </button>
             </div>
 
-            {/* Date Slider */}
+            {/* Month Calendar */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-zinc-300">
                 Choose Booking Date
               </label>
-              <div className="flex gap-2.5 overflow-x-auto pb-3 pt-1 scrollbar-thin">
-                {dates.map((date, idx) => {
-                  const isSelected =
-                    formatLocalDate(date) === formatLocalDate(selectedDate);
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedDate(date)}
-                      className={`flex flex-col items-center justify-center p-3.5 rounded-xl border shrink-0 w-20 transition duration-300 cursor-pointer ${
-                        isSelected
-                          ? "bg-primary text-black border-primary font-bold shadow-lg shadow-primary/15"
-                          : "bg-zinc-950/40 text-zinc-400 border-zinc-900 hover:border-zinc-700"
-                      }`}
-                    >
-                      <span className="text-xs font-semibold tracking-wider uppercase">
-                        {getDayName(date)}
-                      </span>
-                      <span className="text-lg font-extrabold mt-1">
-                        {date.getDate()}
-                      </span>
-                      <span className="text-[10px] opacity-75 mt-0.5">
-                        {getMonthName(date)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <BookingCalendar
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                openDays={openDays}
+              />
             </div>
 
             {/* Available Slots Grid */}
@@ -608,14 +585,14 @@ function BookingWizardContent() {
 
             <div className="flex gap-4 pt-4 border-t border-zinc-900/60">
               <button
-                onClick={() => setStep(1)}
+                onClick={() => setStep(2)}
                 className="flex-1 bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 py-3.5 rounded-xl font-bold transition text-sm cursor-pointer"
               >
                 Back
               </button>
               <button
                 disabled={!selectedTime}
-                onClick={() => setStep(3)}
+                onClick={() => setStep(4)}
                 className="flex-1 bg-primary hover:bg-primary-hover text-black py-3.5 rounded-xl font-bold transition duration-300 text-sm shadow-lg shadow-primary/10 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue <ChevronRight className="h-4 w-4" />
@@ -624,16 +601,16 @@ function BookingWizardContent() {
           </div>
         )}
 
-        {/* ─── STEP 3: SELECT STYLIST ─── */}
-        {step === 3 && selectedService && selectedDate && selectedTime && (
+        {/* ─── STEP 2: SELECT STYLIST ─── */}
+        {step === 2 && selectedService && (
           <div className="space-y-4 sm:space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                3. Choose Your Stylist
+                2. Choose Your Stylist
               </h2>
               <button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="text-xs text-zinc-400 hover:text-primary transition"
               >
                 ← Back
@@ -647,7 +624,10 @@ function BookingWizardContent() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button
-                  onClick={() => setSelectedStaff("any")}
+                  onClick={() => {
+                    setSelectedStaffId(null);
+                    setSelectedTime(null);
+                  }}
                   className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
                     selectedStaff === "any"
                       ? "border-primary bg-dark-gold/10"
@@ -666,10 +646,12 @@ function BookingWizardContent() {
                 {staffList.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => setSelectedStaff(s)}
+                    onClick={() => {
+                      setSelectedStaffId(s.id);
+                      setSelectedTime(null);
+                    }}
                     className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
-                      selectedStaff !== "any" &&
-                      (selectedStaff as Staff)?.id === s.id
+                      selectedStaff !== "any" && selectedStaff.id === s.id
                         ? "border-primary bg-dark-gold/10"
                         : "border-zinc-800 bg-zinc-950/20 hover:border-zinc-700"
                     }`}
@@ -694,13 +676,13 @@ function BookingWizardContent() {
 
             <div className="flex gap-4 pt-4 border-t border-zinc-900/60">
               <button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="flex-1 bg-transparent hover:bg-zinc-900 text-zinc-300 border border-zinc-700 py-3.5 rounded-xl font-bold transition text-sm cursor-pointer"
               >
                 Back
               </button>
               <button
-                onClick={() => setStep(4)}
+                onClick={() => setStep(3)}
                 className="flex-1 bg-primary hover:bg-primary-hover text-black py-3.5 rounded-xl font-bold transition duration-300 text-sm shadow-lg shadow-primary/10 flex items-center justify-center gap-2 cursor-pointer"
               >
                 Continue <ChevronRight className="h-4 w-4" />
@@ -741,11 +723,11 @@ function BookingWizardContent() {
                         at {selectedTime}
                       </span>
                     </div>
-                    {selectedStaff && selectedStaff !== "any" && (
+                    {selectedStaff !== "any" && (
                       <div>
                         <span className="block text-xs text-zinc-500">Stylist</span>
                         <span className="font-bold text-zinc-200">
-                          {(selectedStaff as Staff).name}
+                          {selectedStaff.name}
                         </span>
                       </div>
                     )}
@@ -1241,11 +1223,11 @@ function BookingWizardContent() {
                   {selectedService.name}
                 </span>
               </div>
-              {selectedStaff && selectedStaff !== "any" && (
+              {selectedStaff !== "any" && (
                 <div className="flex justify-between">
                   <span className="text-zinc-500 text-xs">Stylist</span>
                   <span className="font-bold text-zinc-200">
-                    {(selectedStaff as Staff).name}
+                    {selectedStaff.name}
                   </span>
                 </div>
               )}
@@ -1301,7 +1283,7 @@ function BookingWizardContent() {
                   setSelectedService(null);
                   setSelectedTime(null);
                   setNotes("");
-                  setSelectedStaff("any");
+                  setSelectedStaffId(null);
                   setCouponCode("");
                   setCouponResult(null);
                   setCouponApplied(false);

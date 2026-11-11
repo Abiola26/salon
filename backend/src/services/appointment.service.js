@@ -589,6 +589,15 @@ const appointmentService = {
     // Determine which appointments to check
     let bookedForStaff = [];
     if (staffId) {
+      // Reject stale/invalid stylist links (rebook URLs) before reading the calendar.
+      const staff = await staffRepository.findById(staffId);
+      if (!staff || !staff.isActive) {
+        throw ApiError.notFound('Selected stylist not found or inactive');
+      }
+      if (serviceId && !staff.services.some((s) => s.id === serviceId)) {
+        throw ApiError.badRequest('Selected stylist does not offer this service');
+      }
+
       // Stylist unavailable for the whole date (leave) → nothing to book
       const onLeaveIds = await staffLeaveRepository.findStaffIdsOnLeave(dateStr);
       if (onLeaveIds.includes(staffId)) {
