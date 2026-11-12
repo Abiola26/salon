@@ -6,6 +6,7 @@ const staffRepository = require('../repositories/staff.repository');
 const couponRepository = require('../repositories/coupon.repository');
 const staffLeaveRepository = require('../repositories/staffLeave.repository');
 const paymentRepository = require('../repositories/payment.repository');
+const waitlistService = require('./waitlist.service');
 const { prisma } = require('../config/db');
 const { sendAppointmentConfirmationEmail, sendCancellationEmail } = require('../utils/email');
 const { auditLog } = require('../utils/audit');
@@ -18,7 +19,7 @@ const {
   WORKING_HOURS,
 } = require('../config/workingHours');
 const { toCents, toDecimal2 } = require('../utils/money');
-const { appointmentStartAt, appointmentEndAt } = require('../utils/salonTime');
+const { appointmentStartAt, appointmentEndAt, toDateOnly } = require('../utils/salonTime');
 const { CANCELLATION_POLICY } = require('../config/businessPolicy');
 const {
   POINTS_VALUE_IN_DOLLARS,
@@ -186,6 +187,13 @@ const appointmentService = {
     // Fire-and-forget confirmation email (only after the booking is committed)
     sendAppointmentConfirmationEmail(appointment.user, appointment, appointment.service).catch(() => {});
 
+    // A successful booking fulfils any active waitlist request for this day.
+    await waitlistService.markConvertedForBooking({
+      userId,
+      serviceId: appointment.serviceId,
+      preferredDate: appointment.appointmentDate,
+    });
+
     return appointment;
   },
 
@@ -280,7 +288,7 @@ const appointmentService = {
     // under the same per-date advisory lock used by createAppointment.
     const lockKey = `salon:booking:${new Date(dto.appointmentDate).toISOString().slice(0, 10)}`;
 
-    return prisma.$transaction(
+    const updated = await prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint)`;
 
@@ -323,6 +331,21 @@ const appointmentService = {
       },
       { timeout: 10000 }
     );
+
+    // The old slot is free again — offer it to the oldest matching waitlist entry.
+    const slotChanged =
+      toDateOnly(appointment.appointmentDate) !== toDateOnly(dto.appointmentDate) ||
+      appointment.appointmentTime !== dto.appointmentTime;
+    if (slotChanged) {
+      await waitlistService.notifyNextForSlot({
+        serviceId: appointment.serviceId,
+        preferredDate: appointment.appointmentDate,
+        staffId: appointment.staffId,
+        appointmentTime: appointment.appointmentTime,
+      });
+    }
+
+    return updated;
   },
 
   async cancelAppointment(id, userId, role, ipAddress = null) {
@@ -425,6 +448,15 @@ const appointmentService = {
       freeCancelHours: CANCELLATION_POLICY.freeCancelHours,
       refundedPayments,
     }).catch(() => {});
+
+    // The cancelled slot is now free — offer it to the oldest matching waitlist
+    // entry. Notification failures are logged and must not fail the cancellation.
+    await waitlistService.notifyNextForSlot({
+      serviceId: appointment.serviceId,
+      preferredDate: appointment.appointmentDate,
+      staffId: appointment.staffId,
+      appointmentTime: appointment.appointmentTime,
+    });
 
     await auditLog({
       userId,

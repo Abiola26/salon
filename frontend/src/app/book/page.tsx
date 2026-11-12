@@ -8,7 +8,7 @@ import { Elements } from "@stripe/react-stripe-js";
 import confetti from "canvas-confetti";
 import { useAuthStore, type User as AuthUser } from "@/store/useAuthStore";
 import { api, getApiErrorMessage } from "@/lib/api";
-import { formatLocalDate, nextOpenDate } from "@/lib/date";
+import { formatLocalDate, nextOpenDate, parseLocalDate } from "@/lib/date";
 import { queryKeys } from "@/lib/queryKeys";
 import CheckoutForm from "@/components/CheckoutForm";
 import BookingCalendar from "@/components/BookingCalendar";
@@ -79,9 +79,19 @@ function BookingWizardContent() {
   // Steps: 1=Service, 2=Stylist, 3=Date&Time, 4=Confirm&Auth, 5=Pay, 6=Success
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date>(() =>
-    nextOpenDate(new Date(), DEFAULT_OPEN_DAYS)
-  );
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const dateParam = searchParams.get("date");
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const parsed = parseLocalDate(dateParam);
+      if (
+        formatLocalDate(parsed) === dateParam &&
+        dateParam >= formatLocalDate(new Date())
+      ) {
+        return parsed;
+      }
+    }
+    return nextOpenDate(new Date(), DEFAULT_OPEN_DAYS);
+  });
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(() =>
     searchParams.get("staffId")
@@ -115,6 +125,12 @@ function BookingWizardContent() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [bookingError, setBookingError] = useState<string | null>(null);
+
+  // Waitlist (shown when the selected day has no bookable slots)
+  const [waitlistTime, setWaitlistTime] = useState("");
+  const [waitlistNotes, setWaitlistNotes] = useState("");
+  const [waitlistSuccess, setWaitlistSuccess] = useState<string | null>(null);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
 
   // Deposit & policy copy come from the backend (single source of truth)
   const { data: configResponse } = useQuery({
@@ -218,6 +234,57 @@ function BookingWizardContent() {
     enabled: !!selectedService,
   });
   const slots: Slot[] = slotsResponse?.data?.slots || [];
+  const hasAvailableSlots = slots.some((slot) => slot.available);
+
+  const joinWaitlistMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedService) throw new Error("Please choose a service first.");
+      const staffId = selectedStaff !== "any" ? selectedStaff.id : undefined;
+      const res = await api.post("/waitlist", {
+        serviceId: selectedService.id,
+        preferredDate: formattedDate,
+        ...(staffId && { staffId }),
+        ...(waitlistTime && { preferredTime: waitlistTime }),
+        ...(waitlistNotes.trim() && { notes: waitlistNotes.trim() }),
+      });
+      return res.data.data;
+    },
+    onMutate: () => {
+      setWaitlistError(null);
+      setWaitlistSuccess(null);
+    },
+    onSuccess: () => {
+      setWaitlistSuccess(
+        "You're on the waitlist. We'll email you if a matching slot opens up."
+      );
+      setWaitlistNotes("");
+      setWaitlistTime("");
+    },
+    onError: (error) => {
+      setWaitlistError(
+        getApiErrorMessage(error, "Failed to join the waitlist. Please try again.")
+      );
+    },
+  });
+
+  const waitlistLoginUrl = () => {
+    const params = new URLSearchParams({ date: formattedDate });
+    if (selectedService) params.set("serviceId", selectedService.id);
+    if (selectedStaff !== "any") params.set("staffId", selectedStaff.id);
+    return `/login?redirect=${encodeURIComponent(`/book?${params.toString()}`)}`;
+  };
+
+  const resetWaitlistForm = () => {
+    setWaitlistSuccess(null);
+    setWaitlistError(null);
+    setWaitlistTime("");
+    setWaitlistNotes("");
+  };
+
+  const handleSelectDate = (date: Date) => {
+    setSelectedDate(date);
+    resetWaitlistForm();
+  };
 
   // Reset time slot when date changes
   useEffect(() => {
@@ -467,6 +534,7 @@ function BookingWizardContent() {
                       setSelectedService(service);
                       setSelectedStaffId(null);
                       setSelectedTime(null);
+                      resetWaitlistForm();
                       setStep(2);
                     }}
                     className={`text-left glass-card p-4 sm:p-6 rounded-2xl relative overflow-hidden transition-all duration-300 border flex flex-col justify-between cursor-pointer ${
@@ -527,7 +595,7 @@ function BookingWizardContent() {
               </label>
               <BookingCalendar
                 selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
+                onSelectDate={handleSelectDate}
                 openDays={openDays}
               />
             </div>
@@ -552,34 +620,115 @@ function BookingWizardContent() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-3">
-                  {slots.map((slot, idx) => {
-                    const isSelected = selectedTime === slot.time;
-                    return (
-                      <button
-                        key={idx}
-                        disabled={!slot.available}
-                        onClick={() => setSelectedTime(slot.time)}
-                        className={`py-2 sm:py-3 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold border transition text-center cursor-pointer ${
-                          isSelected
-                            ? "bg-primary text-black border-primary shadow-md"
-                            : slot.available
-                            ? "bg-zinc-950/20 text-white border-zinc-800 hover:border-primary/50"
-                            : "bg-zinc-950/80 text-zinc-600 border-zinc-950 cursor-not-allowed opacity-35"
-                        }`}
-                      >
-                        <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 inline-block -mt-0.5 mr-0.5 sm:mr-1 text-primary opacity-60" />
-                        {slot.time}
-                      </button>
-                    );
-                  })}
-                  {slots.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-zinc-500 text-sm">
-                      {slotsResponse?.data?.reason ||
-                        "No availability found for this date. Please try another day."}
+                <>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-3">
+                    {slots.map((slot, idx) => {
+                      const isSelected = selectedTime === slot.time;
+                      return (
+                        <button
+                          key={idx}
+                          disabled={!slot.available}
+                          onClick={() => setSelectedTime(slot.time)}
+                          className={`py-2 sm:py-3 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold border transition text-center cursor-pointer ${
+                            isSelected
+                              ? "bg-primary text-black border-primary shadow-md"
+                              : slot.available
+                              ? "bg-zinc-950/20 text-white border-zinc-800 hover:border-primary/50"
+                              : "bg-zinc-950/80 text-zinc-600 border-zinc-950 cursor-not-allowed opacity-35"
+                          }`}
+                        >
+                          <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 inline-block -mt-0.5 mr-0.5 sm:mr-1 text-primary opacity-60" />
+                          {slot.time}
+                        </button>
+                      );
+                    })}
+                    {slots.length === 0 && (
+                      <div className="col-span-full py-8 text-center text-zinc-500 text-sm">
+                        {slotsResponse?.data?.reason ||
+                          "No availability found for this date. Please try another day."}
+                      </div>
+                    )}
+                  </div>
+
+                  {!hasAvailableSlots && !slotsResponse?.data?.onLeave && (
+                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center shrink-0">
+                          <Clock className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">
+                            No slots left? Join the waitlist
+                          </p>
+                          <p className="text-xs text-zinc-400 mt-0.5">
+                            We&apos;ll email you if a matching cancellation opens this day.
+                          </p>
+                        </div>
+                      </div>
+
+                      {waitlistSuccess ? (
+                        <p
+                          role="status"
+                          className="text-xs text-green-300 bg-green-950/30 border border-green-900/40 rounded-xl p-3"
+                        >
+                          {waitlistSuccess}
+                        </p>
+                      ) : user ? (
+                        <div className="space-y-2">
+                          <div className="grid sm:grid-cols-2 gap-2">
+                            <select
+                              value={waitlistTime}
+                              onChange={(e) => setWaitlistTime(e.target.value)}
+                              className="bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
+                              aria-label="Preferred time"
+                            >
+                              <option value="">Any time</option>
+                              {slots.map((slot) => (
+                                <option key={slot.time} value={slot.time}>
+                                  {slot.time}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              value={waitlistNotes}
+                              onChange={(e) => setWaitlistNotes(e.target.value)}
+                              maxLength={500}
+                              placeholder="Notes (optional)"
+                              className="bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary"
+                            />
+                          </div>
+                          {waitlistError && (
+                            <p role="alert" className="text-xs text-red-300">
+                              {waitlistError}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => joinWaitlistMutation.mutate()}
+                            disabled={joinWaitlistMutation.isPending}
+                            className="w-full bg-primary/90 hover:bg-primary text-black py-2.5 rounded-xl font-bold text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {joinWaitlistMutation.isPending ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Clock className="h-3.5 w-3.5" />
+                            )}
+                            Join Waitlist
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => router.push(waitlistLoginUrl())}
+                          className="w-full bg-primary/90 hover:bg-primary text-black py-2.5 rounded-xl font-bold text-xs transition cursor-pointer"
+                        >
+                          Sign in to join the waitlist
+                        </button>
+                      )}
                     </div>
                   )}
-                </div>
+                </>
               )}
             </div>
 
@@ -627,6 +776,7 @@ function BookingWizardContent() {
                   onClick={() => {
                     setSelectedStaffId(null);
                     setSelectedTime(null);
+                    resetWaitlistForm();
                   }}
                   className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
                     selectedStaff === "any"
@@ -649,6 +799,7 @@ function BookingWizardContent() {
                     onClick={() => {
                       setSelectedStaffId(s.id);
                       setSelectedTime(null);
+                      resetWaitlistForm();
                     }}
                     className={`p-4 rounded-2xl border text-left transition cursor-pointer flex items-center gap-4 ${
                       selectedStaff !== "any" && selectedStaff.id === s.id

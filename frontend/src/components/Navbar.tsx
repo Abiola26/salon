@@ -158,6 +158,13 @@ export default function Navbar() {
                         >
                           Notifications
                         </Link>
+                        <Link
+                          href="/admin/waitlist"
+                          role="menuitem"
+                          className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
+                        >
+                          Waitlist
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -302,6 +309,13 @@ export default function Navbar() {
                     className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Notifications
+                  </Link>
+                  <Link
+                    href="/admin/waitlist"
+                    onClick={() => setIsOpen(false)}
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
+                  >
+                    Waitlist
                   </Link>
                 </>
               )}

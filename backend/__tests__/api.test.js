@@ -24,6 +24,7 @@ let createdCouponId = '';
 let createdCouponCode = '';
 let createdReviewId = '';
 let leaveBookingId = '';
+let waitlistEntryId = '';
 
 // Must match how the admin was seeded (CI passes ADMIN_EMAIL/ADMIN_PASSWORD).
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@salon.com';
@@ -33,6 +34,14 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123456';
 const tomorrow = new Date();
 tomorrow.setDate(tomorrow.getDate() + 1);
 const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+// First open day after today (Mon–Sat) for waitlist tests.
+const waitlistDate = new Date();
+waitlistDate.setDate(waitlistDate.getDate() + 1);
+while (waitlistDate.getUTCDay() === 0) {
+  waitlistDate.setDate(waitlistDate.getDate() + 1);
+}
+const waitlistDateStr = waitlistDate.toISOString().split('T')[0];
 
 // =============================================================================
 // AUTH ROUTES
@@ -522,6 +531,129 @@ describe('Notifications API', () => {
 });
 
 // =============================================================================
+// WAITLIST ROUTES
+// =============================================================================
+describe('Waitlist API', () => {
+  it('POST /api/waitlist — customer should join the waitlist', async () => {
+    if (!createdServiceId || !customerToken) return;
+
+    const res = await request(app)
+      .post('/api/waitlist')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        preferredDate: waitlistDateStr,
+        preferredTime: '15:00',
+        notes: 'Please call if a morning slot opens',
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data.status).toBe('WAITING');
+    expect(res.body.data.service.id).toBe(createdServiceId);
+    waitlistEntryId = res.body.data.id;
+  });
+
+  it('POST /api/waitlist — duplicate active request returns 409', async () => {
+    if (!createdServiceId || !customerToken) return;
+
+    const res = await request(app)
+      .post('/api/waitlist')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ serviceId: createdServiceId, preferredDate: waitlistDateStr });
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('POST /api/waitlist — past dates and unknown services are rejected', async () => {
+    if (!createdServiceId || !customerToken) return;
+
+    const past = await request(app)
+      .post('/api/waitlist')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ serviceId: createdServiceId, preferredDate: '2000-01-01' });
+    expect(past.statusCode).toBe(400);
+
+    const unknown = await request(app)
+      .post('/api/waitlist')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: '00000000-0000-4000-8000-000000000000',
+        preferredDate: waitlistDateStr,
+      });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it('GET /api/waitlist/my — customer should see their waitlist entries', async () => {
+    const res = await request(app)
+      .get('/api/waitlist/my')
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    if (waitlistEntryId) {
+      expect(res.body.data.some((entry) => entry.id === waitlistEntryId)).toBe(true);
+    }
+  });
+
+  it('GET /api/waitlist — admin should see entries, summary and pagination', async () => {
+    const res = await request(app)
+      .get('/api/waitlist?status=WAITING&limit=5')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.meta).toEqual(
+      expect.objectContaining({
+        page: 1,
+        limit: 5,
+        total: expect.any(Number),
+        summary: expect.objectContaining({ waiting: expect.any(Number) }),
+      })
+    );
+  });
+
+  it('GET /api/waitlist — customer should receive 403', async () => {
+    const res = await request(app)
+      .get('/api/waitlist')
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('PATCH /api/waitlist/:id/notify — admin should notify a waiting customer', async () => {
+    if (!waitlistEntryId) return;
+
+    const res = await request(app)
+      .patch(`/api/waitlist/${waitlistEntryId}/notify`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.status).toBe('NOTIFIED');
+    expect(res.body.data.notifiedAt).toBeTruthy();
+  });
+
+  it('DELETE /api/waitlist/:id — customer should cancel their entry', async () => {
+    if (!waitlistEntryId) return;
+
+    const res = await request(app)
+      .delete(`/api/waitlist/${waitlistEntryId}`)
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.status).toBe('CANCELLED');
+  });
+
+  it('GET /api/waitlist — rejects an invalid status with 422', async () => {
+    const res = await request(app)
+      .get('/api/waitlist?status=BOGUS')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.errors.some((error) => error.field === 'status')).toBe(true);
+  });
+});
+
+// =============================================================================
 // ANALYTICS ROUTES
 // =============================================================================
 describe('Analytics API', () => {
@@ -947,6 +1079,12 @@ afterAll(async () => {
     if (leaveBookingId) {
       await prisma.appointment.delete({
         where: { id: leaveBookingId },
+      }).catch(() => {});
+    }
+
+    if (waitlistEntryId) {
+      await prisma.waitlistEntry.delete({
+        where: { id: waitlistEntryId },
       }).catch(() => {});
     }
 

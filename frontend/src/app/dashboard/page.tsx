@@ -64,6 +64,18 @@ interface Slot {
   available: boolean;
 }
 
+type WaitlistStatus = "WAITING" | "NOTIFIED" | "CONVERTED" | "CANCELLED";
+
+interface WaitlistEntry {
+  id: string;
+  preferredDate: string;
+  preferredTime: string | null;
+  notes: string | null;
+  status: WaitlistStatus;
+  service: { id: string; name: string };
+  staff?: { id: string; name: string } | null;
+}
+
 interface ApiCollectionResponse<T> {
   data?: T;
   [key: string]: unknown;
@@ -102,6 +114,9 @@ export default function CustomerDashboardPage() {
   // Notification preferences (Phase 10)
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState<string | null>(null);
+
+  // Waitlist requests (Phase 12a)
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
 
   // Fetch public config (deposit + cancellation policy copy)
   const { data: configResponse } = useQuery({
@@ -170,6 +185,34 @@ export default function CustomerDashboardPage() {
   const phoneValue = phoneDraft ?? profilePhone ?? "";
   const phoneDirty =
     phoneDraft !== null && phoneDraft.trim() !== (profilePhone ?? "");
+
+  // Waitlist requests
+  const { data: waitlistResponse } = useQuery({
+    queryKey: ["waitlist"],
+    queryFn: async () => {
+      const res = await api.get("/waitlist/my");
+      return res.data;
+    },
+    enabled: !!user,
+  });
+  const activeWaitlist: WaitlistEntry[] = (waitlistResponse?.data || []).filter(
+    (entry: WaitlistEntry) => entry.status === "WAITING" || entry.status === "NOTIFIED"
+  );
+
+  const cancelWaitlistMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      await api.delete(`/waitlist/${entryId}`);
+    },
+    onMutate: () => setWaitlistError(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["waitlist"] });
+    },
+    onError: (error) => {
+      setWaitlistError(
+        getApiErrorMessage(error, "Failed to cancel the waitlist request.")
+      );
+    },
+  });
 
   // Fetch customer reviews
   const { data: myReviewsResponse } = useQuery({
@@ -691,6 +734,85 @@ export default function CustomerDashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Waitlist Requests (Phase 12a) */}
+        {activeWaitlist.length > 0 && (
+          <div
+            id="waitlist"
+            className="glass-panel p-5 rounded-2xl border border-zinc-800 bg-zinc-950/30 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+                <Clock className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                  Waitlist Requests
+                </p>
+                <p className="text-zinc-500 text-[11px] mt-0.5">
+                  We&apos;ll email you when a matching cancellation opens up.
+                </p>
+              </div>
+            </div>
+
+            {waitlistError && (
+              <div
+                role="alert"
+                className="bg-red-950/30 border border-red-900/40 text-red-300 p-3 rounded-lg flex items-start gap-2 text-xs"
+              >
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{waitlistError}</span>
+              </div>
+            )}
+
+            <ul className="space-y-2">
+              {activeWaitlist.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white">
+                      {entry.service.name}
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      {parseLocalDate(entry.preferredDate).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                      {" · "}
+                      {entry.preferredTime || "Any time"}
+                      {entry.staff?.name ? ` · ${entry.staff.name}` : ""}
+                    </p>
+                    <span
+                      className={`inline-flex mt-2 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${
+                        entry.status === "NOTIFIED"
+                          ? "bg-green-950/40 text-green-300 border-green-900/50"
+                          : "bg-amber-950/40 text-amber-300 border-amber-900/50"
+                      }`}
+                    >
+                      {entry.status === "NOTIFIED"
+                        ? "Slot opened — check your email"
+                        : "Waiting"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => cancelWaitlistMutation.mutate(entry.id)}
+                    disabled={cancelWaitlistMutation.isPending}
+                    className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-red-300 border border-red-900/40 hover:bg-red-950/40 px-3 py-2 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    aria-label={`Cancel waitlist request for ${entry.service.name}`}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Cancel
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
 
         {cancelNotice && (
