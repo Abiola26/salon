@@ -2,6 +2,7 @@
 
 const { enqueueEmail } = require('./emailQueue');
 const { buildAppointmentIcs } = require('./ics');
+const { toDateOnly } = require('./salonTime');
 const { CLIENT_URL } = require('../config/env');
 const logger = require('../config/logger');
 
@@ -190,6 +191,86 @@ const sendCancellationEmail = async (
   });
 };
 
+const waitlistBookLink = (entry) => {
+  const date = toDateOnly(entry.preferredDate);
+  const params = new URLSearchParams({ serviceId: entry.serviceId, date });
+  if (entry.staffId) params.set('staffId', entry.staffId);
+  return `${CLIENT_URL}/book?${params.toString()}`;
+};
+
+const waitlistDateLabel = (entry) =>
+  new Date(`${toDateOnly(entry.preferredDate)}T12:00:00.000Z`).toLocaleDateString(
+    'en-US',
+    { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }
+  );
+
+const sendWaitlistJoinedEmail = async (user, entry, service) => {
+  const dateLabel = waitlistDateLabel(entry);
+  const timeLine = entry.preferredTime
+    ? `<tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Preferred time</td><td style="padding:8px;border:1px solid #e5e7eb">${entry.preferredTime}</td></tr>`
+    : '';
+  const staffLine = entry.staff?.name
+    ? `<tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Stylist</td><td style="padding:8px;border:1px solid #e5e7eb">${entry.staff.name}</td></tr>`
+    : '';
+
+  await sendEmail({
+    to: user.email,
+    subject: '⏳ You are on the waitlist',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6d28d9">You are on the waitlist ⏳</h2>
+        <p>Hi ${user.name}, we will email you if a matching slot opens up.</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:16px">
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Service</td><td style="padding:8px;border:1px solid #e5e7eb">${service.name}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Date</td><td style="padding:8px;border:1px solid #e5e7eb">${dateLabel}</td></tr>
+          ${timeLine}
+          ${staffLine}
+        </table>
+        <p style="color:#6b7280;margin-top:16px;font-size:13px">
+          You can cancel your waitlist request from
+          <a href="${CLIENT_URL}/dashboard" style="color:#6d28d9">your dashboard</a>.
+        </p>
+      </div>
+    `,
+    text: `You are on the waitlist for ${service.name} on ${dateLabel}. Manage it at ${CLIENT_URL}/dashboard`,
+  });
+};
+
+const sendWaitlistAvailabilityEmail = async (user, entry, service) => {
+  const dateLabel = waitlistDateLabel(entry);
+  const bookLink = waitlistBookLink(entry);
+  const timeLine = entry.preferredTime
+    ? `<tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Preferred time</td><td style="padding:8px;border:1px solid #e5e7eb">${entry.preferredTime}</td></tr>`
+    : '';
+  const staffLine = entry.staff?.name
+    ? `<tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Stylist</td><td style="padding:8px;border:1px solid #e5e7eb">${entry.staff.name}</td></tr>`
+    : '';
+
+  await sendEmail({
+    to: user.email,
+    subject: '✨ A slot opened up!',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6d28d9">A slot opened up ✨</h2>
+        <p>Hi ${user.name}, availability just opened for your waitlist request. Book soon before it is taken.</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:16px">
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Service</td><td style="padding:8px;border:1px solid #e5e7eb">${service.name}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Date</td><td style="padding:8px;border:1px solid #e5e7eb">${dateLabel}</td></tr>
+          ${timeLine}
+          ${staffLine}
+        </table>
+        <a href="${bookLink}" style="display:inline-block;padding:12px 24px;background:#6d28d9;color:#fff;border-radius:6px;text-decoration:none;margin-top:16px">
+          Book My Slot
+        </a>
+        <p style="color:#6b7280;margin-top:16px;font-size:13px">
+          Or copy this link: <a href="${bookLink}">${bookLink}</a>
+        </p>
+      </div>
+    `,
+    text: `A slot opened for ${service.name} on ${dateLabel}. Book it at ${bookLink}`,
+  });
+};
+
 const sendRefundEmail = async (user, payment, service) => {
   const amount = typeof payment.amount === 'number'
     ? payment.amount.toFixed(2)
@@ -226,4 +307,6 @@ module.exports = {
   sendPaymentConfirmationEmail,
   sendCancellationEmail,
   sendRefundEmail,
+  sendWaitlistJoinedEmail,
+  sendWaitlistAvailabilityEmail,
 };

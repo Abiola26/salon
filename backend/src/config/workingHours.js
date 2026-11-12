@@ -44,6 +44,17 @@ const minutesToTime = (minutes) => {
 const isOpenDay = (date) => WORKING_HOURS.openDays.includes(date.getDay());
 
 /**
+ * Check whether a date-only string (YYYY-MM-DD) is an open business day.
+ * Uses UTC noon so the weekday cannot shift with the process timezone.
+ * @param {string} dateStr
+ * @returns {boolean}
+ */
+const isOpenDayString = (dateStr) => {
+  const weekday = new Date(`${dateStr}T12:00:00.000Z`).getUTCDay();
+  return WORKING_HOURS.openDays.includes(weekday);
+};
+
+/**
  * Check whether a time slot (HH:MM) is within business hours
  * given a service duration so the appointment ends before close.
  * @param {string} time         - "HH:MM"
@@ -80,6 +91,7 @@ module.exports = {
   timeToMinutes,
   minutesToTime,
   isOpenDay,
+  isOpenDayString,
   isWithinBusinessHours,
   generateSlots,
 };

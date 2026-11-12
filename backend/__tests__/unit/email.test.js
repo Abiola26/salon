@@ -9,6 +9,8 @@ const {
   sendPaymentConfirmationEmail,
   sendCancellationEmail,
   sendRefundEmail,
+  sendWaitlistJoinedEmail,
+  sendWaitlistAvailabilityEmail,
 } = require('../../src/utils/email');
 const { enqueueEmail } = require('../../src/utils/emailQueue');
 
@@ -125,6 +127,45 @@ describe('emailUtils', () => {
     it('sendRefundEmail with string amount', async () => {
       await sendRefundEmail(user, { ...payment, amount: '50.00' }, service);
       expect(enqueueEmail).toHaveBeenCalled();
+    });
+
+    it('sendWaitlistJoinedEmail formats a Date preferredDate and links the dashboard', async () => {
+      const entry = {
+        id: 'w1',
+        serviceId: 'svc-1',
+        staffId: 'staff-1',
+        preferredDate: new Date('2026-11-20T00:00:00.000Z'),
+        preferredTime: '10:00',
+      };
+
+      await sendWaitlistJoinedEmail(user, entry, service);
+
+      const queued = enqueueEmail.mock.calls[0][0];
+      expect(queued).toEqual(
+        expect.objectContaining({
+          to: user.email,
+          subject: expect.stringContaining('waitlist'),
+        })
+      );
+      expect(queued.html).toContain('Friday, November 20, 2026');
+      expect(queued.html).toContain('/dashboard');
+    });
+
+    it('sendWaitlistAvailabilityEmail links to the prefilled booking date', async () => {
+      const entry = {
+        id: 'w1',
+        serviceId: 'svc-1',
+        staffId: 'staff-1',
+        preferredDate: new Date('2026-11-20T00:00:00.000Z'),
+        preferredTime: '10:00',
+      };
+
+      await sendWaitlistAvailabilityEmail(user, entry, service);
+
+      const queued = enqueueEmail.mock.calls[0][0];
+      expect(queued.html).toContain('serviceId=svc-1');
+      expect(queued.html).toContain('date=2026-11-20');
+      expect(queued.html).toContain('staffId=staff-1');
     });
   });
 });

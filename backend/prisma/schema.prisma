@@ -64,6 +64,14 @@ enum AuditAction {
   PASSWORD_RESET_REQUESTED
   PASSWORD_RESET_COMPLETED
   REFUND_PAYMENT
+  NOTIFY_WAITLIST
+}
+
+enum WaitlistStatus {
+  WAITING
+  NOTIFIED
+  CONVERTED
+  CANCELLED
 }
 
 enum EmailStatus {
@@ -107,6 +115,7 @@ model User {
   auditLogs            AuditLog[]
   reviews              Review[]
   refreshTokens        RefreshToken[]
+  waitlistEntries      WaitlistEntry[]
 
   @@map("users")
 }
@@ -145,6 +154,7 @@ model Staff {
   services     Service[]     // Implicit join table _ServiceToStaff
   appointments Appointment[]
   leaves       StaffLeave[]
+  waitlistEntries WaitlistEntry[]
 
   @@map("staff")
 }
@@ -167,6 +177,32 @@ model StaffLeave {
   @@map("staff_leave")
 }
 
+// Customer waitlist for a fully booked (or on-leave) service/date. Entries are
+// notified oldest-first when a matching appointment is cancelled/rescheduled;
+// booking the same service/date converts the customer's active entry.
+model WaitlistEntry {
+  id            String         @id @default(uuid())
+  userId        String
+  serviceId     String
+  staffId       String?
+  preferredDate DateTime       @db.Date
+  preferredTime String?
+  notes         String?
+  status        WaitlistStatus @default(WAITING)
+  notifiedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff   Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([preferredDate, status])
+  @@index([serviceId, preferredDate, status])
+  @@index([userId, status])
+  @@map("waitlist_entries")
+}
+
 model Service {
   id          String        @id @default(uuid())
   name        String
@@ -182,6 +218,7 @@ model Service {
   appointments Appointment[]
   reviews      Review[]
   staff        Staff[]       // Implicit join table _ServiceToStaff
+  waitlistEntries WaitlistEntry[]
 
   @@map("services")
 }
