@@ -65,6 +65,9 @@ enum AuditAction {
   PASSWORD_RESET_COMPLETED
   REFUND_PAYMENT
   NOTIFY_WAITLIST
+  CREATE_GIFT_CARD
+  VOID_GIFT_CARD
+  REDEEM_GIFT_CARD
 }
 
 enum WaitlistStatus {
@@ -72,6 +75,18 @@ enum WaitlistStatus {
   NOTIFIED
   CONVERTED
   CANCELLED
+}
+
+enum GiftCardStatus {
+  ACTIVE
+  DEPLETED
+  VOID
+}
+
+enum GiftCardRedemptionStatus {
+  APPLIED
+  RESTORED
+  FORFEITED
 }
 
 enum EmailStatus {
@@ -116,6 +131,7 @@ model User {
   reviews              Review[]
   refreshTokens        RefreshToken[]
   waitlistEntries      WaitlistEntry[]
+  giftCardsCreated     GiftCard[]      @relation("GiftCardCreatedBy")
 
   @@map("users")
 }
@@ -271,6 +287,7 @@ model Appointment {
   coupon   Coupon?  @relation(fields: [couponId], references: [id], onDelete: SetNull)
   payments Payment[]
   review   Review?
+  giftCardRedemptions GiftCardRedemption[]
 
   // Slot exclusivity is enforced in code, NOT by a unique index:
   // appointment.service.js takes a per-date Postgres advisory lock inside a
@@ -305,6 +322,47 @@ model Payment {
   @@index([userId])
   @@index([appointmentId])
   @@map("payments")
+}
+
+// Admin-issued stored-value cards. Redemption debits `balance`; cancellation
+// restores it (unless the customer cancelled late and forfeits the deposit).
+model GiftCard {
+  id             String         @id @default(uuid())
+  code           String         @unique
+  initialAmount  Decimal        @db.Decimal(10, 2)
+  balance        Decimal        @db.Decimal(10, 2)
+  currency       String         @default("cad")
+  status         GiftCardStatus @default(ACTIVE)
+  recipientName  String?
+  recipientEmail String?
+  notes          String?        @db.Text
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  createdBy   User?                @relation("GiftCardCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions GiftCardRedemption[]
+
+  @@index([status])
+  @@index([recipientEmail])
+  @@map("gift_cards")
+}
+
+model GiftCardRedemption {
+  id            String                   @id @default(uuid())
+  giftCardId    String
+  appointmentId String
+  amount        Decimal                  @db.Decimal(10, 2)
+  status        GiftCardRedemptionStatus @default(APPLIED)
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  giftCard    GiftCard    @relation(fields: [giftCardId], references: [id], onDelete: Restrict)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId])
+  @@index([appointmentId, status])
+  @@map("gift_card_redemptions")
 }
 
 model AuditLog {

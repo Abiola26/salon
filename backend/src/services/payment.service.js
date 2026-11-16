@@ -4,6 +4,7 @@ const stripe = require('../config/stripe');
 const appointmentRepository = require('../repositories/appointment.repository');
 const paymentRepository = require('../repositories/payment.repository');
 const userRepository = require('../repositories/user.repository');
+const giftCardService = require('./giftCard.service');
 const { sendPaymentConfirmationEmail, sendRefundEmail } = require('../utils/email');
 const { auditLog } = require('../utils/audit');
 const ApiError = require('../utils/ApiError');
@@ -12,7 +13,7 @@ const { toCents, toDecimal2 } = require('../utils/money');
 const logger = require('../config/logger');
 
 const paymentService = {
-  async createPaymentIntent(userId, { appointmentId, paymentType }) {
+  async createPaymentIntent(userId, { appointmentId, paymentType, giftCardCode }) {
     const appointment = await appointmentRepository.findById(appointmentId);
     if (!appointment) throw ApiError.notFound('Appointment not found');
 
@@ -41,12 +42,40 @@ const paymentService = {
       throw ApiError.badRequest('No outstanding balance for this appointment');
     }
 
-    let chargeAmount; // in cents
+    if (paymentType === 'DEPOSIT' && appointment.paymentStatus === 'PARTIAL') {
+      throw ApiError.badRequest('A deposit has already been paid. Please complete full payment.');
+    }
 
-    if (paymentType === 'DEPOSIT') {
-      if (appointment.paymentStatus === 'PARTIAL') {
-        throw ApiError.badRequest('A deposit has already been paid. Please complete full payment.');
+    let chargeAmount; // in cents
+    let giftCardResult = null;
+
+    if (giftCardCode) {
+      giftCardResult = await giftCardService.applyForPayment({
+        userId,
+        appointmentId,
+        paymentType,
+        giftCardCode,
+      });
+
+      // The card covered the full amount due — nothing for Stripe to charge.
+      if (giftCardResult.chargeCents === 0) {
+        return {
+          clientSecret: null,
+          paymentIntentId: null,
+          amount: giftCardResult.appliedCents,
+          currency: 'cad',
+          paymentType,
+          paid: true,
+          giftCard: {
+            code: giftCardResult.card.code,
+            appliedCents: giftCardResult.appliedCents,
+            balanceCents: toCents(giftCardResult.card.balance),
+          },
+        };
       }
+
+      chargeAmount = giftCardResult.chargeCents;
+    } else if (paymentType === 'DEPOSIT') {
       const depositCents = Math.round((typeof DEPOSIT_AMOUNT === 'number' ? DEPOSIT_AMOUNT : 30) * 100);
       chargeAmount = Math.min(depositCents, remainingCents);
     } else {
@@ -93,6 +122,14 @@ const paymentService = {
       amount: chargeAmount,
       currency: 'cad',
       paymentType,
+      paid: false,
+      ...(giftCardResult && {
+        giftCard: {
+          code: giftCardResult.card.code,
+          appliedCents: giftCardResult.appliedCents,
+          balanceCents: toCents(giftCardResult.card.balance),
+        },
+      }),
     };
   },
 

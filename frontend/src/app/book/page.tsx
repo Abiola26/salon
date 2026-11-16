@@ -66,6 +66,14 @@ interface CouponResult {
   discountAmount: number;
 }
 
+interface GiftCardValidation {
+  code: string;
+  balance: string;
+  balanceCents: number;
+  currency: string;
+  status: string;
+}
+
 interface AuthSession {
   user: AuthUser;
   accessToken: string;
@@ -108,6 +116,14 @@ function BookingWizardContent() {
   const [couponResult, setCouponResult] = useState<CouponResult | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponApplied, setCouponApplied] = useState(false);
+
+  // Gift card state
+  const [giftCardCode, setGiftCardCode] = useState("");
+  const [appliedGiftCard, setAppliedGiftCard] =
+    useState<GiftCardValidation | null>(null);
+  const [giftCardError, setGiftCardError] = useState<string | null>(null);
+  const [giftCardAppliedCents, setGiftCardAppliedCents] = useState(0);
+  const [fullyPaidWithGiftCard, setFullyPaidWithGiftCard] = useState(false);
 
   // Loyalty points state
   const [redeemPoints, setRedeemPoints] = useState(false);
@@ -305,6 +321,14 @@ function BookingWizardContent() {
   const finalPrice = Math.max(0, servicePrice - totalDiscount);
   const deposit = Math.min(depositAmountConfig, finalPrice);
   const amountToPay = paymentType === "DEPOSIT" ? deposit : finalPrice;
+  const amountToPayCents = Math.round(amountToPay * 100);
+  const giftCardCoverageCents = appliedGiftCard
+    ? Math.min(appliedGiftCard.balanceCents, amountToPayCents)
+    : 0;
+  const amountDueAfterGiftCard = Math.max(
+    0,
+    amountToPayCents - giftCardCoverageCents
+  );
 
   const applyCouponMutation = useMutation({
     mutationFn: async (code: string) => {
@@ -342,6 +366,39 @@ function BookingWizardContent() {
     setCouponResult(null);
     setCouponCode("");
     setCouponError(null);
+  };
+
+  const validateGiftCardMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await api.post("/gift-cards/validate", { code });
+      return res.data?.data as GiftCardValidation;
+    },
+    onMutate: () => {
+      setGiftCardError(null);
+      setAppliedGiftCard(null);
+    },
+    onSuccess: (card) => {
+      setAppliedGiftCard(card);
+      setGiftCardCode(card.code);
+    },
+    onError: (error) => {
+      setGiftCardError(
+        getApiErrorMessage(error, "Invalid or unavailable gift card.")
+      );
+    },
+  });
+  const giftCardLoading = validateGiftCardMutation.isPending;
+
+  const handleApplyGiftCard = () => {
+    const code = giftCardCode.trim();
+    if (!code) return;
+    validateGiftCardMutation.mutate(code);
+  };
+
+  const handleRemoveGiftCard = () => {
+    setAppliedGiftCard(null);
+    setGiftCardCode("");
+    setGiftCardError(null);
   };
 
   const inlineAuthMutation = useMutation({
@@ -384,6 +441,16 @@ function BookingWizardContent() {
     inlineAuthMutation.mutate();
   };
 
+  const handlePaymentSuccess = () => {
+    confetti({
+      particleCount: 150,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ["#E60654", "#FFD3E2", "#C20443", "#FFFFFF"],
+    });
+    setStep(6);
+  };
+
   const createBookingMutation = useMutation({
     mutationFn: async () => {
       if (!selectedService || !selectedTime) {
@@ -408,17 +475,36 @@ function BookingWizardContent() {
       const intentRes = await api.post("/payments/create-intent", {
         appointmentId: appt.id,
         paymentType,
+        ...(appliedGiftCard && { giftCardCode: appliedGiftCard.code }),
       });
 
-      const { clientSecret: secret, amount } = intentRes.data.data;
-      return { appointmentId: appt.id, clientSecret: secret, amount };
+      const {
+        clientSecret: secret,
+        amount,
+        paid,
+        giftCard,
+      } = intentRes.data.data;
+      return {
+        appointmentId: appt.id,
+        clientSecret: secret ?? null,
+        amount,
+        paid: Boolean(paid),
+        giftCard: giftCard ?? null,
+      };
     },
     onMutate: () => {
       setBookingError(null);
     },
-    onSuccess: ({ clientSecret: secret, amount }) => {
-      setClientSecret(secret);
+    onSuccess: ({ clientSecret: secret, amount, paid, giftCard }) => {
       setPaymentAmount(amount);
+      setGiftCardAppliedCents(giftCard?.appliedCents ?? 0);
+      setFullyPaidWithGiftCard(paid);
+      if (paid) {
+        setClientSecret(null);
+        handlePaymentSuccess();
+        return;
+      }
+      setClientSecret(secret);
       setStep(5);
     },
     onError: (error) => {
@@ -435,16 +521,6 @@ function BookingWizardContent() {
   const handleCreateAppointment = () => {
     if (!selectedService || !selectedTime) return;
     createBookingMutation.mutate();
-  };
-
-  const handlePaymentSuccess = () => {
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ["#E60654", "#FFD3E2", "#C20443", "#FFFFFF"],
-    });
-    setStep(6);
   };
 
   const stepLabels = [
@@ -921,6 +997,24 @@ function BookingWizardContent() {
                           </span>
                         </div>
                       )}
+                      {appliedGiftCard && (
+                        <>
+                          <div className="flex justify-between text-green-400">
+                            <span>Gift card ({appliedGiftCard.code})</span>
+                            <span>
+                              -${(giftCardCoverageCents / 100).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between font-semibold">
+                            <span className="text-zinc-300">Charge now</span>
+                            <span className="text-white">
+                              {amountDueAfterGiftCard === 0
+                                ? "$0.00 — fully covered"
+                                : `$${(amountDueAfterGiftCard / 100).toFixed(2)}`}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -983,6 +1077,72 @@ function BookingWizardContent() {
                     )}
                     {couponError && (
                       <p className="text-red-400 text-[10px]">{couponError}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Gift Card Panel (only if logged in) */}
+                {user && (
+                  <div className="glass-panel p-5 rounded-2xl border border-zinc-800 space-y-3">
+                    <h3 className="font-extrabold text-xs text-zinc-300 tracking-wider uppercase flex items-center gap-1.5">
+                      <Gift className="h-3.5 w-3.5 text-primary" />
+                      Gift Card
+                    </h3>
+                    {appliedGiftCard ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between bg-green-950/30 border border-green-900/40 rounded-lg px-3 py-2">
+                          <div>
+                            <p className="text-green-400 font-bold text-xs">
+                              {appliedGiftCard.code} applied
+                            </p>
+                            <p className="text-green-300/70 text-[10px]">
+                              ${(appliedGiftCard.balanceCents / 100).toFixed(2)}{" "}
+                              available — up to $
+                              {(giftCardCoverageCents / 100).toFixed(2)} used now
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRemoveGiftCard}
+                            className="text-[10px] text-red-400 hover:text-red-300 font-bold ml-2 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={giftCardCode}
+                          onChange={(event) =>
+                            setGiftCardCode(event.target.value.toUpperCase())
+                          }
+                          onKeyDown={(event) =>
+                            event.key === "Enter" && handleApplyGiftCard()
+                          }
+                          placeholder="SALON-XXXX-XXXX-XXXX"
+                          aria-label="Gift card code"
+                          className="flex-1 px-3 py-2 border border-zinc-800 rounded-lg bg-zinc-950 text-white text-xs focus:outline-none focus:border-primary placeholder-zinc-600 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyGiftCard}
+                          disabled={giftCardLoading || !giftCardCode.trim()}
+                          className="bg-primary hover:bg-primary-hover text-black px-3 py-2 rounded-lg text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                        >
+                          {giftCardLoading ? (
+                            <Loader2 className="animate-spin h-3.5 w-3.5" />
+                          ) : (
+                            "Apply"
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    {giftCardError && (
+                      <p role="alert" className="text-red-400 text-[10px]">
+                        {giftCardError}
+                      </p>
                     )}
                   </div>
                 )}
@@ -1294,8 +1454,11 @@ function BookingWizardContent() {
                         <>
                           <Lock className="h-4 w-4" />
                           <span>
-                            Book Reservation & Pay $
-                            {amountToPay.toFixed(2)}
+                            {appliedGiftCard && amountDueAfterGiftCard === 0
+                              ? "Confirm Booking — Gift Card Covers Total"
+                              : `Book Reservation & Pay $${(
+                                  amountDueAfterGiftCard / 100
+                                ).toFixed(2)}`}
                           </span>
                         </>
                       )}
@@ -1329,6 +1492,13 @@ function BookingWizardContent() {
               <p className="text-zinc-400 text-xs">
                 Authorize payment securely via Stripe.
               </p>
+              {giftCardAppliedCents > 0 && (
+                <p className="text-green-400 text-xs font-semibold">
+                  Gift card applied: $
+                  {(giftCardAppliedCents / 100).toFixed(2)}. The remaining balance
+                  is charged below.
+                </p>
+              )}
             </div>
 
             <div className="glass-panel p-6 rounded-2xl border border-primary/25">
@@ -1403,11 +1573,21 @@ function BookingWizardContent() {
                 </div>
               )}
               <div className="flex justify-between pt-2 border-t border-zinc-900">
-                <span className="text-zinc-500 text-xs">Authorized Paid</span>
+                <span className="text-zinc-500 text-xs">
+                  {fullyPaidWithGiftCard ? "Gift card covered" : "Authorized Paid"}
+                </span>
                 <span className="font-extrabold text-primary">
                   ${(paymentAmount / 100).toFixed(2)}
                 </span>
               </div>
+              {giftCardAppliedCents > 0 && !fullyPaidWithGiftCard && (
+                <div className="flex justify-between text-green-400">
+                  <span className="text-xs">Gift card applied</span>
+                  <span className="font-bold">
+                    -${(giftCardAppliedCents / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Loyalty points earned indicator */}
@@ -1416,7 +1596,13 @@ function BookingWizardContent() {
               <span>
                 You&apos;ll earn{" "}
                 <strong>
-                  {Math.floor((paymentAmount / 100) * 0.1)} loyalty points
+                  {Math.floor(
+                    ((paymentAmount +
+                      (fullyPaidWithGiftCard ? 0 : giftCardAppliedCents)) /
+                      100) *
+                      0.1
+                  )}{" "}
+                  loyalty points
                 </strong>{" "}
                 for this visit — redeemable on your next booking!
               </span>
@@ -1439,6 +1625,13 @@ function BookingWizardContent() {
                   setCouponResult(null);
                   setCouponApplied(false);
                   setRedeemPoints(false);
+                  setGiftCardCode("");
+                  setAppliedGiftCard(null);
+                  setGiftCardError(null);
+                  setGiftCardAppliedCents(0);
+                  setFullyPaidWithGiftCard(false);
+                  setPaymentAmount(0);
+                  setClientSecret(null);
                   setStep(1);
                 }}
                 className="w-full bg-transparent hover:bg-zinc-900 text-zinc-400 border border-zinc-800 py-3 rounded-xl font-bold transition text-sm cursor-pointer"

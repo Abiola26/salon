@@ -7,6 +7,7 @@ const couponRepository = require('../repositories/coupon.repository');
 const staffLeaveRepository = require('../repositories/staffLeave.repository');
 const paymentRepository = require('../repositories/payment.repository');
 const waitlistService = require('./waitlist.service');
+const giftCardService = require('./giftCard.service');
 const { prisma } = require('../config/db');
 const { sendAppointmentConfirmationEmail, sendCancellationEmail } = require('../utils/email');
 const { auditLog } = require('../utils/audit');
@@ -383,8 +384,10 @@ const appointmentService = {
       hoursUntilStart < CANCELLATION_POLICY.freeCancelHours;
     const depositForfeited = Boolean(lateCancel && toCents(appointment.amountPaid) > 0);
 
-    // Status flip, coupon-capacity release and points refund commit together:
-    // a crash mid-way can no longer leak coupon capacity or lose redeemed points.
+    // Status flip, coupon-capacity release, points refund and gift-card restore
+    // commit together: a crash mid-way can no longer leak coupon capacity,
+    // lose redeemed points, or strand stored-value credit.
+    let giftCardRestore = { restoredCents: 0, forfeitedCents: 0, pointsClawed: 0 };
     const cancelled = await prisma.$transaction(async (tx) => {
       const claimed = await tx.appointment.updateMany({
         where: { id, status: { in: ['PENDING', 'CONFIRMED'] } },
@@ -405,6 +408,12 @@ const appointmentService = {
           data: { loyaltyPoints: { increment: appointment.pointsRedeemed } },
         });
       }
+
+      giftCardRestore = await giftCardService.restoreForAppointment(
+        id,
+        { forfeit: lateCancel },
+        tx
+      );
 
       return tx.appointment.findUnique({
         where: { id },
@@ -464,11 +473,24 @@ const appointmentService = {
       details:
         `Cancelled appointment ${id} for user ${appointment.userId}` +
         (depositForfeited ? ' (deposit forfeited: late cancellation)' : '') +
-        (refundedPayments > 0 ? ` (${refundedPayments} payment(s) refunded)` : ''),
+        (refundedPayments > 0 ? ` (${refundedPayments} payment(s) refunded)` : '') +
+        (giftCardRestore.restoredCents > 0
+          ? ` (gift card $${toDecimal2(giftCardRestore.restoredCents)} restored)`
+          : '') +
+        (giftCardRestore.forfeitedCents > 0
+          ? ` (gift card $${toDecimal2(giftCardRestore.forfeitedCents)} forfeited)`
+          : ''),
       ipAddress,
     });
 
-    return { ...cancelled, depositForfeited, refundedPayments, refundFailed };
+    return {
+      ...cancelled,
+      depositForfeited,
+      refundedPayments,
+      refundFailed,
+      giftCardRestored: toDecimal2(giftCardRestore.restoredCents),
+      giftCardForfeited: toDecimal2(giftCardRestore.forfeitedCents),
+    };
   },
 
   async markNoShow(id, actorId = null, ipAddress = null) {

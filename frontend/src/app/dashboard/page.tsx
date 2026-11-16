@@ -76,6 +76,16 @@ interface WaitlistEntry {
   staff?: { id: string; name: string } | null;
 }
 
+interface CustomerGiftCard {
+  id: string;
+  code: string;
+  initialAmount: string;
+  balance: string;
+  currency: string;
+  status: "ACTIVE";
+  createdAt: string;
+}
+
 interface ApiCollectionResponse<T> {
   data?: T;
   [key: string]: unknown;
@@ -197,6 +207,20 @@ export default function CustomerDashboardPage() {
   });
   const activeWaitlist: WaitlistEntry[] = (waitlistResponse?.data || []).filter(
     (entry: WaitlistEntry) => entry.status === "WAITING" || entry.status === "NOTIFIED"
+  );
+
+  const { data: giftCardsResponse } = useQuery({
+    queryKey: ["gift-cards", "mine"],
+    queryFn: async () => {
+      const res = await api.get("/gift-cards/mine");
+      return res.data;
+    },
+    enabled: !!user,
+  });
+  const myGiftCards: CustomerGiftCard[] = giftCardsResponse?.data || [];
+  const giftCardBalance = myGiftCards.reduce(
+    (total, card) => total + parseFloat(card.balance || "0"),
+    0
   );
 
   const cancelWaitlistMutation = useMutation({
@@ -597,6 +621,58 @@ export default function CustomerDashboardPage() {
             Redeem Now
           </button>
         </div>
+
+        {/* Gift Card Credit */}
+        {myGiftCards.length > 0 && (
+          <div
+            id="gift-cards"
+            className="glass-panel p-5 rounded-2xl border border-primary/30 bg-primary/5 space-y-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center shrink-0">
+                  <Gift className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                    Gift Card Credit
+                  </p>
+                  <p className="text-2xl font-extrabold text-white">
+                    ${giftCardBalance.toFixed(2)}{" "}
+                    <span className="text-base font-semibold text-primary">
+                      available
+                    </span>
+                  </p>
+                  <p className="text-zinc-500 text-[10px] mt-0.5">
+                    Apply a code at checkout for your next booking.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push("/book")}
+                className="shrink-0 text-xs text-primary border border-primary/30 hover:bg-primary/10 px-4 py-2 rounded-xl transition font-bold cursor-pointer"
+              >
+                Use at Checkout
+              </button>
+            </div>
+
+            <ul className="grid sm:grid-cols-2 gap-2">
+              {myGiftCards.map((card) => (
+                <li
+                  key={card.id}
+                  className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2 flex items-center justify-between gap-3"
+                >
+                  <span className="font-mono text-[11px] text-zinc-300 truncate">
+                    {card.code}
+                  </span>
+                  <span className="text-xs font-bold text-primary shrink-0">
+                    ${parseFloat(card.balance).toFixed(2)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Notification Preferences Card */}
         <div

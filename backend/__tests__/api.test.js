@@ -25,6 +25,12 @@ let createdCouponCode = '';
 let createdReviewId = '';
 let leaveBookingId = '';
 let waitlistEntryId = '';
+let customerEmail = '';
+let giftCardId = '';
+let giftCardCode = '';
+let giftCardAppointmentId = '';
+let giftCardForfeitAppointmentId = '';
+let voidGiftCardId = '';
 
 // Must match how the admin was seeded (CI passes ADMIN_EMAIL/ADMIN_PASSWORD).
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@salon.com';
@@ -64,6 +70,7 @@ describe('Auth API', () => {
 
   it('POST /api/auth/register — should create a new customer', async () => {
     const uniqueEmail = `testcustomer_${Date.now()}@example.com`;
+    customerEmail = uniqueEmail;
     const res = await request(app)
       .post('/api/auth/register')
       .send({
@@ -999,6 +1006,224 @@ describe('Reviews API', () => {
 });
 
 // =============================================================================
+// GIFT CARDS API
+// =============================================================================
+describe('Gift Cards API', () => {
+  it('POST /api/gift-cards — customer should receive 403', async () => {
+    const res = await request(app)
+      .post('/api/gift-cards')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ amount: 40 });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('POST /api/gift-cards — admin should issue a gift card', async () => {
+    if (!customerEmail) return;
+
+    const res = await request(app)
+      .post('/api/gift-cards')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        amount: 40,
+        recipientName: 'Test Customer',
+        recipientEmail: customerEmail,
+        notes: 'Automated integration test gift card',
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data.code).toMatch(/^SALON-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(parseFloat(res.body.data.balance)).toBe(40);
+    giftCardId = res.body.data.id;
+    giftCardCode = res.body.data.code;
+  });
+
+  it('GET /api/gift-cards — admin should list cards with a summary', async () => {
+    if (!giftCardCode) return;
+
+    const res = await request(app)
+      .get(`/api/gift-cards?search=${encodeURIComponent(giftCardCode)}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.some((card) => card.id === giftCardId)).toBe(true);
+    expect(res.body.meta.summary).toEqual(
+      expect.objectContaining({
+        active: expect.any(Number),
+        total: expect.any(Number),
+        activeBalance: expect.any(Number),
+      })
+    );
+  });
+
+  it('POST /api/gift-cards/validate — customer should validate a normalized code', async () => {
+    if (!giftCardCode) return;
+
+    const res = await request(app)
+      .post('/api/gift-cards/validate')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ code: giftCardCode.toLowerCase().replace(/-/g, ' ') });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.code).toBe(giftCardCode);
+    expect(res.body.data.balanceCents).toBe(4000);
+  });
+
+  it('GET /api/gift-cards/mine — customer should see active cards addressed to them', async () => {
+    if (!giftCardCode) return;
+
+    const res = await request(app)
+      .get('/api/gift-cards/mine')
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.some((card) => card.code === giftCardCode)).toBe(true);
+  });
+
+  it('POST /api/payments/create-intent — a gift card can fully cover the balance', async () => {
+    if (!createdServiceId || !customerToken || !giftCardCode) return;
+
+    const created = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        appointmentDate: waitlistDateStr,
+        appointmentTime: '16:00',
+        notes: 'Gift card payment integration test',
+      });
+
+    expect(created.statusCode).toBe(201);
+    giftCardAppointmentId = created.body.data.id;
+
+    const res = await request(app)
+      .post('/api/payments/create-intent')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        appointmentId: giftCardAppointmentId,
+        paymentType: 'FULL',
+        giftCardCode,
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data.paid).toBe(true);
+    expect(res.body.data.clientSecret).toBeNull();
+    expect(res.body.data.amount).toBe(4000);
+    expect(res.body.data.giftCard).toEqual(
+      expect.objectContaining({ appliedCents: 4000, balanceCents: 0 })
+    );
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: giftCardAppointmentId },
+    });
+    expect(appointment.paymentStatus).toBe('PAID');
+    expect(appointment.status).toBe('CONFIRMED');
+    expect(parseFloat(appointment.amountPaid)).toBe(40);
+
+    const card = await prisma.giftCard.findUnique({ where: { id: giftCardId } });
+    expect(card.status).toBe('DEPLETED');
+    expect(parseFloat(card.balance)).toBe(0);
+  });
+
+  it('DELETE /api/appointments/:id — admin cancellation restores gift card credit', async () => {
+    if (!giftCardAppointmentId || !giftCardId) return;
+
+    const res = await request(app)
+      .delete(`/api/appointments/${giftCardAppointmentId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(parseFloat(res.body.data.giftCardRestored)).toBe(40);
+    expect(parseFloat(res.body.data.giftCardForfeited)).toBe(0);
+
+    const card = await prisma.giftCard.findUnique({ where: { id: giftCardId } });
+    expect(card.status).toBe('ACTIVE');
+    expect(parseFloat(card.balance)).toBe(40);
+  });
+
+  it('DELETE /api/appointments/:id — late customer cancellation forfeits gift card credit', async () => {
+    if (!createdServiceId || !customerToken || !giftCardCode) return;
+
+    const created = await request(app)
+      .post('/api/appointments')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        serviceId: createdServiceId,
+        appointmentDate: waitlistDateStr,
+        appointmentTime: '16:30',
+        notes: 'Gift card forfeiture integration test',
+      });
+
+    expect(created.statusCode).toBe(201);
+    giftCardForfeitAppointmentId = created.body.data.id;
+
+    const payment = await request(app)
+      .post('/api/payments/create-intent')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        appointmentId: giftCardForfeitAppointmentId,
+        paymentType: 'FULL',
+        giftCardCode,
+      });
+
+    expect(payment.statusCode).toBe(201);
+    expect(payment.body.data.paid).toBe(true);
+
+    // Force the appointment inside the 48h cancellation window.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await prisma.appointment.update({
+      where: { id: giftCardForfeitAppointmentId },
+      data: { appointmentDate: tomorrow },
+    });
+
+    const res = await request(app)
+      .delete(`/api/appointments/${giftCardForfeitAppointmentId}`)
+      .set('Authorization', `Bearer ${customerToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(parseFloat(res.body.data.giftCardForfeited)).toBe(40);
+    expect(parseFloat(res.body.data.giftCardRestored)).toBe(0);
+
+    const card = await prisma.giftCard.findUnique({ where: { id: giftCardId } });
+    expect(card.status).toBe('DEPLETED');
+    expect(parseFloat(card.balance)).toBe(0);
+
+    const redemption = await prisma.giftCardRedemption.findFirst({
+      where: { appointmentId: giftCardForfeitAppointmentId },
+    });
+    expect(redemption.status).toBe('FORFEITED');
+  });
+
+  it('PATCH /api/gift-cards/:id/void — admin should void a card and block redemption', async () => {
+    if (!customerEmail) return;
+
+    const created = await request(app)
+      .post('/api/gift-cards')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amount: 15, recipientEmail: customerEmail });
+
+    expect(created.statusCode).toBe(201);
+    voidGiftCardId = created.body.data.id;
+
+    const res = await request(app)
+      .patch(`/api/gift-cards/${voidGiftCardId}/void`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.status).toBe('VOID');
+
+    const validation = await request(app)
+      .post('/api/gift-cards/validate')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ code: created.body.data.code });
+
+    expect(validation.statusCode).toBe(400);
+    expect(validation.body.message).toContain('voided');
+  });
+});
+
+// =============================================================================
 // PAYMENTS API
 // =============================================================================
 describe('Payments API', () => {
@@ -1085,6 +1310,28 @@ afterAll(async () => {
     if (waitlistEntryId) {
       await prisma.waitlistEntry.delete({
         where: { id: waitlistEntryId },
+      }).catch(() => {});
+    }
+
+    if (giftCardAppointmentId) {
+      await prisma.appointment.delete({
+        where: { id: giftCardAppointmentId },
+      }).catch(() => {});
+    }
+
+    if (giftCardForfeitAppointmentId) {
+      await prisma.appointment.delete({
+        where: { id: giftCardForfeitAppointmentId },
+      }).catch(() => {});
+    }
+
+    const testGiftCardIds = [giftCardId, voidGiftCardId].filter(Boolean);
+    if (testGiftCardIds.length > 0) {
+      await prisma.giftCardRedemption.deleteMany({
+        where: { giftCardId: { in: testGiftCardIds } },
+      }).catch(() => {});
+      await prisma.giftCard.deleteMany({
+        where: { id: { in: testGiftCardIds } },
       }).catch(() => {});
     }
 

@@ -8,6 +8,7 @@ const couponRepository = require('../../src/repositories/coupon.repository');
 const staffLeaveRepository = require('../../src/repositories/staffLeave.repository');
 const paymentRepository = require('../../src/repositories/payment.repository');
 const paymentService = require('../../src/services/payment.service');
+const giftCardService = require('../../src/services/giftCard.service');
 const { prisma } = require('../../src/config/db');
 const emailUtils = require('../../src/utils/email');
 const { auditLog } = require('../../src/utils/audit');
@@ -21,6 +22,7 @@ jest.mock('../../src/repositories/coupon.repository');
 jest.mock('../../src/repositories/staffLeave.repository');
 jest.mock('../../src/repositories/payment.repository');
 jest.mock('../../src/services/payment.service');
+jest.mock('../../src/services/giftCard.service');
 jest.mock('../../src/config/logger', () => ({
   error: jest.fn(),
   warn: jest.fn(),
@@ -58,6 +60,11 @@ describe('appointmentService', () => {
     // Cancellation only refunds captured payments; default to none.
     paymentRepository.findByAppointmentId.mockResolvedValue([]);
     paymentService.initiateRefund.mockResolvedValue({ alreadyProcessed: false });
+    giftCardService.restoreForAppointment.mockResolvedValue({
+      restoredCents: 0,
+      forfeitedCents: 0,
+      pointsClawed: 0,
+    });
   });
 
   describe('createAppointment', () => {
@@ -566,6 +573,11 @@ describe('appointmentService', () => {
         })
       );
       expect(couponRepository.releaseUsage).toHaveBeenCalledWith('c1', prisma);
+      expect(giftCardService.restoreForAppointment).toHaveBeenCalledWith(
+        'a1',
+        { forfeit: false },
+        prisma
+      );
       expect(paymentService.initiateRefund).toHaveBeenCalledTimes(1);
       expect(paymentService.initiateRefund).toHaveBeenCalledWith('p1', 'u1', '127.0.0.1');
       expect(result).toEqual(
@@ -575,6 +587,30 @@ describe('appointmentService', () => {
           depositForfeited: false,
           refundedPayments: 1,
           refundFailed: false,
+        })
+      );
+    });
+
+    it('reports gift-card credit restored and forfeited during cancellation', async () => {
+      appointmentRepository.findById.mockResolvedValue(
+        appointmentAt(7, { appointmentDate: new Date(dateOffset(7)) })
+      );
+      prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.appointment.findUnique.mockResolvedValue({ id: 'a1', status: 'CANCELLED' });
+      giftCardService.restoreForAppointment.mockResolvedValue({
+        restoredCents: 2500,
+        forfeitedCents: 500,
+        pointsClawed: 2,
+      });
+
+      const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
+
+      expect(result.giftCardRestored).toBe('25.00');
+      expect(result.giftCardForfeited).toBe('5.00');
+      expect(auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'CANCEL_APPOINTMENT',
+          details: expect.stringContaining('gift card $25.00 restored'),
         })
       );
     });
@@ -591,6 +627,11 @@ describe('appointmentService', () => {
       const result = await appointmentService.cancelAppointment('a1', 'u1', 'CUSTOMER');
 
       expect(paymentService.initiateRefund).not.toHaveBeenCalled();
+      expect(giftCardService.restoreForAppointment).toHaveBeenCalledWith(
+        'a1',
+        { forfeit: true },
+        prisma
+      );
       expect(result.depositForfeited).toBe(true);
       expect(result.refundedPayments).toBe(0);
       expect(emailUtils.sendCancellationEmail).toHaveBeenCalledWith(

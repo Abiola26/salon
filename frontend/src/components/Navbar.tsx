@@ -165,6 +165,13 @@ export default function Navbar() {
                         >
                           Waitlist
                         </Link>
+                        <Link
+                          href="/admin/gift-cards"
+                          role="menuitem"
+                          className="px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition"
+                        >
+                          Gift Cards
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -316,6 +323,13 @@ export default function Navbar() {
                     className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
                   >
                     Waitlist
+                  </Link>
+                  <Link
+                    href="/admin/gift-cards"
+                    onClick={() => setIsOpen(false)}
+                    className="block text-zinc-300 hover:text-primary px-3 py-2 rounded-lg text-sm font-semibold transition"
+                  >
+                    Gift Cards
                   </Link>
                 </>
               )}
