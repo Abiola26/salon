@@ -11,6 +11,8 @@ const {
   sendRefundEmail,
   sendWaitlistJoinedEmail,
   sendWaitlistAvailabilityEmail,
+  sendGiftCardIssuedEmail,
+  sendGiftCardAppliedEmail,
 } = require('../../src/utils/email');
 const { enqueueEmail } = require('../../src/utils/emailQueue');
 
@@ -147,6 +149,45 @@ describe('emailUtils', () => {
           subject: expect.stringContaining('waitlist'),
         })
       );
+      expect(queued.html).toContain('Friday, November 20, 2026');
+      expect(queued.html).toContain('/dashboard');
+    });
+
+    it('sendGiftCardIssuedEmail includes the full code and amount', async () => {
+      await sendGiftCardIssuedEmail(
+        { name: 'Ada', email: 'ada@example.com' },
+        { code: 'SALON-ABCD-EFGH-JKLM', initialAmount: '50.00' }
+      );
+
+      expect(enqueueEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'ada@example.com',
+          subject: expect.stringContaining('$50.00'),
+        })
+      );
+      const queued = enqueueEmail.mock.calls[0][0];
+      expect(queued.html).toContain('SALON-ABCD-EFGH-JKLM');
+    });
+
+    it('sendGiftCardAppliedEmail shows the applied amount, remaining balance and date', async () => {
+      const giftCard = { code: 'SALON-ABCD-EFGH-JKLM', balance: '25.00' };
+
+      await sendGiftCardAppliedEmail(
+        user,
+        giftCard,
+        2500,
+        { appointmentDate: new Date('2026-11-20T00:00:00.000Z'), appointmentTime: '10:00' },
+        service
+      );
+
+      expect(enqueueEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: user.email,
+          subject: expect.stringContaining('Gift card applied'),
+        })
+      );
+      const queued = enqueueEmail.mock.calls[0][0];
+      expect(queued.html).toContain('$25.00');
       expect(queued.html).toContain('Friday, November 20, 2026');
       expect(queued.html).toContain('/dashboard');
     });

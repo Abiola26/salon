@@ -271,6 +271,66 @@ const sendWaitlistAvailabilityEmail = async (user, entry, service) => {
   });
 };
 
+const sendGiftCardIssuedEmail = async (recipient, card) => {
+  const amount = parseFloat(card.initialAmount).toFixed(2);
+
+  await sendEmail({
+    to: recipient.email,
+    subject: `🎁 Your $${amount} gift card`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6d28d9">A gift card for you 🎁</h2>
+        <p>Hi ${recipient.name}, a $${amount} gift card has been issued to you.</p>
+        <p style="margin-top:20px">Use this code at checkout:</p>
+        <p style="font-size:22px;font-weight:bold;letter-spacing:2px;background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;padding:16px;text-align:center">
+          ${card.code}
+        </p>
+        <p style="color:#6b7280;margin-top:16px;font-size:13px">
+          You can see active gift cards in
+          <a href="${CLIENT_URL}/dashboard" style="color:#6d28d9">your dashboard</a>.
+          Gift cards are non-refundable and carry no cash value.
+        </p>
+      </div>
+    `,
+    text: `You received a $${amount} gift card. Code: ${card.code}. Manage it at ${CLIENT_URL}/dashboard`,
+  });
+};
+
+const sendGiftCardAppliedEmail = async (user, card, appliedCents, appointment, service) => {
+  const amount = (appliedCents / 100).toFixed(2);
+  const remaining = parseFloat(card.balance).toFixed(2);
+  const dateLabel = new Date(`${toDateOnly(appointment.appointmentDate)}T12:00:00.000Z`)
+    .toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+
+  await sendEmail({
+    to: user.email,
+    subject: '🎁 Gift card applied to your booking',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        <h2 style="color:#6d28d9">Gift card applied 🎁</h2>
+        <p>Hi ${user.name}, we applied your gift card to your appointment.</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:16px">
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Service</td><td style="padding:8px;border:1px solid #e5e7eb">${service.name}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Date</td><td style="padding:8px;border:1px solid #e5e7eb">${dateLabel}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Time</td><td style="padding:8px;border:1px solid #e5e7eb">${appointment.appointmentTime}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Gift card applied</td><td style="padding:8px;border:1px solid #e5e7eb">$${amount}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">Card balance remaining</td><td style="padding:8px;border:1px solid #e5e7eb">$${remaining}</td></tr>
+        </table>
+        <p style="color:#6b7280;margin-top:16px;font-size:13px">
+          Manage your bookings at <a href="${CLIENT_URL}/dashboard" style="color:#6d28d9">your dashboard</a>.
+        </p>
+      </div>
+    `,
+    text: `A $${amount} gift card was applied to your ${service.name} appointment on ${dateLabel}. Remaining card balance: $${remaining}.`,
+  });
+};
+
 const sendRefundEmail = async (user, payment, service) => {
   const amount = typeof payment.amount === 'number'
     ? payment.amount.toFixed(2)
@@ -309,4 +369,6 @@ module.exports = {
   sendRefundEmail,
   sendWaitlistJoinedEmail,
   sendWaitlistAvailabilityEmail,
+  sendGiftCardIssuedEmail,
+  sendGiftCardAppliedEmail,
 };

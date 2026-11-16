@@ -4,6 +4,7 @@ const paymentService = require('../../src/services/payment.service');
 const appointmentRepository = require('../../src/repositories/appointment.repository');
 const paymentRepository = require('../../src/repositories/payment.repository');
 const userRepository = require('../../src/repositories/user.repository');
+const giftCardService = require('../../src/services/giftCard.service');
 const stripe = require('../../src/config/stripe');
 const emailUtils = require('../../src/utils/email');
 const { auditLog } = require('../../src/utils/audit');
@@ -12,6 +13,7 @@ const logger = require('../../src/config/logger');
 jest.mock('../../src/repositories/appointment.repository');
 jest.mock('../../src/repositories/payment.repository');
 jest.mock('../../src/repositories/user.repository');
+jest.mock('../../src/services/giftCard.service');
 jest.mock('../../src/config/stripe', () => ({
   paymentIntents: {
     create: jest.fn(),
@@ -203,6 +205,91 @@ describe('paymentService', () => {
         paymentService.createPaymentIntent('u1', { appointmentId: 'a1', paymentType: 'FULL' })
       ).rejects.toThrow("below Stripe's $0.50 minimum");
       expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    });
+
+    it('returns paid=true without Stripe when the gift card covers the full charge', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        id: 'a1',
+        userId: 'u1',
+        status: 'PENDING',
+        paymentStatus: 'UNPAID',
+        amountPaid: '0.00',
+        service: { price: '100.00', name: 'Cut' },
+        serviceId: 's1',
+      });
+      giftCardService.applyForPayment.mockResolvedValue({
+        card: { code: 'SALON-ABCD-EFGH-JKLM', balance: '0.00' },
+        appointment: { id: 'a1' },
+        appliedCents: 10000,
+        chargeCents: 0,
+      });
+
+      const result = await paymentService.createPaymentIntent('u1', {
+        appointmentId: 'a1',
+        paymentType: 'FULL',
+        giftCardCode: 'SALON-ABCD-EFGH-JKLM',
+      });
+
+      expect(giftCardService.applyForPayment).toHaveBeenCalledWith({
+        userId: 'u1',
+        appointmentId: 'a1',
+        paymentType: 'FULL',
+        giftCardCode: 'SALON-ABCD-EFGH-JKLM',
+      });
+      expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+      expect(paymentRepository.create).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        paid: true,
+        clientSecret: null,
+        amount: 10000,
+        giftCard: {
+          code: 'SALON-ABCD-EFGH-JKLM',
+          appliedCents: 10000,
+          balanceCents: 0,
+        },
+      });
+    });
+
+    it('charges only the residual after a partial gift-card application', async () => {
+      appointmentRepository.findById.mockResolvedValue({
+        id: 'a1',
+        userId: 'u1',
+        status: 'PENDING',
+        paymentStatus: 'UNPAID',
+        amountPaid: '0.00',
+        service: { price: '100.00', name: 'Cut' },
+        serviceId: 's1',
+      });
+      giftCardService.applyForPayment.mockResolvedValue({
+        card: { code: 'SALON-ABCD-EFGH-JKLM', balance: '1000.00' },
+        appointment: { id: 'a1' },
+        appliedCents: 5000,
+        chargeCents: 5000,
+      });
+      userRepository.findById.mockResolvedValue({ id: 'u1', email: 'u1@example.com' });
+      stripe.paymentIntents.create.mockResolvedValue({ id: 'pi_123', client_secret: 'secret_123' });
+      paymentRepository.create.mockResolvedValue({});
+
+      const result = await paymentService.createPaymentIntent('u1', {
+        appointmentId: 'a1',
+        paymentType: 'FULL',
+        giftCardCode: 'SALON-ABCD-EFGH-JKLM',
+      });
+
+      expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 5000 })
+      );
+      expect(paymentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: '50.00', paymentType: 'FULL' })
+      );
+      expect(result).toMatchObject({
+        paid: false,
+        amount: 5000,
+        giftCard: {
+          appliedCents: 5000,
+          balanceCents: 100000,
+        },
+      });
     });
 
     it('blocks a second deposit when the appointment is already PARTIAL', async () => {

@@ -10,6 +10,12 @@ const createPaymentIntentSchema = z.object({
     required_error: 'Payment type is required',
     invalid_type_error: 'Payment type must be FULL or DEPOSIT',
   }),
+  giftCardCode: z
+    .string()
+    .trim()
+    .min(8, 'Invalid gift card code')
+    .max(40, 'Invalid gift card code')
+    .optional(),
 });
 
 module.exports = { createPaymentIntentSchema };
